@@ -1,0 +1,8 @@
+---
+cards:
+  - type: rom
+    image: rom.bin
+  - type: ram
+    size: 4096
+  - type: storage
+    disk: pcrel.bin 

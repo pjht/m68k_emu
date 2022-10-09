@@ -1,0 +1,41 @@
+[package]
+name = "reedline-repl-rs"
+version = "1.0.2"
+authors = ["Artur Hallmann <arturh@arturh.de>", "Jack Lund <jackl@geekheads.net>"]
+description = "Library to generate a fancy REPL for your application based on reedline and clap"
+license = "MIT"
+repository = "https://github.com/arturh85/reedline-repl-rs"
+homepage = "https://github.com/arturh85/reedline-repl-rs"
+readme = "README.md"
+keywords = ["repl", "interpreter", "clap"]
+categories = ["command-line-interface"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+reedline = "0.6.0"
+nu-ansi-term = { version = "0.45.1" }
+crossterm = { version = "0.23.2" }
+yansi = "0.5.1"
+regex = "1"
+clap = "3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] } # only for async example
+
+[target.'cfg(windows)'.dependencies]
+winapi-util = "0.1.5"
+
+[features]
+default = []
+async = []
+macro = ["clap/cargo"]
+
+[[example]]
+name = "async"
+required-features = ["async"]
+
+[[example]]
+name = "macro"
+required-features = ["macro"]
