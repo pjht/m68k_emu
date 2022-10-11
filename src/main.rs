@@ -14,6 +14,7 @@ use crate::{
     m68k::{BusError, M68K},
 };
 use disas::DisassemblyError;
+use elf::types::Symbol;
 use itertools::Itertools;
 use parse_int::parse;
 use reedline_repl_rs::{
@@ -155,6 +156,11 @@ impl TryFrom<char> for PeekSize {
     }
 }
 
+struct EmuState {
+    cpu: M68K,
+    symbols: Vec<Symbol>,
+}
+
 fn main() -> Result<(), ReplError> {
     let config: Mapping = serde_yaml::from_str(
         &fs::read_to_string("config.yaml").expect("Could not read config file"),
@@ -178,7 +184,7 @@ fn main() -> Result<(), ReplError> {
             Err(e) => panic!("{}", e),
         };
     }
-    Repl::<_, Error>::new(M68K::new(backplane))
+    Repl::<_, Error>::new(EmuState {cpu: M68K::new(backplane), symbols: Vec::new()})
         .with_name("68KEmu")
         .with_version("0.1.0")
         .with_banner("68K Backplane Computer Emulator")
@@ -198,9 +204,9 @@ fn main() -> Result<(), ReplError> {
                         .takes_value(true),
                 )
                 .about("Send a command to a card"),
-            |args, cpu| {
+            |args, state| {
                 let num = args.get_one::<String>("num").unwrap().parse::<u8>()?;
-                cpu.bus_mut()
+                state.cpu.bus_mut()
                     .cards_mut()
                     .get_mut(num as usize)
                     .ok_or(Error::InvalidCard(num))?
@@ -216,10 +222,10 @@ fn main() -> Result<(), ReplError> {
         )
         .with_command(
             Command::new("ls").about("List the cards in the system"),
-            |_, cpu| {
+            |_, state| {
                 #[allow(unstable_name_collisions)]
                 Ok(Some(
-                    cpu.bus_mut()
+                    state.cpu.bus_mut()
                         .cards()
                         .iter()
                         .enumerate()
@@ -231,7 +237,7 @@ fn main() -> Result<(), ReplError> {
         )
         .with_command(
             Command::new("regs").about("Show CPU registers"),
-            |_, cpu| Ok(Some(format!("{}", cpu))),
+            |_, state| Ok(Some(format!("{}", state.cpu))),
         )
         .with_command(
             Command::new("step")
@@ -255,22 +261,23 @@ fn main() -> Result<(), ReplError> {
                         .help("Print ending registers")
                 )
                 .about("Step the CPU"),
-            |args, cpu| {
+            |args, state| {
                 let count =
                     parse::<u32>(args.get_one::<String>("count").map_or("1", String::as_str))?;
                 let mut out = String::new();
                 for _ in 0..count {
-                    if cpu.stopped {
-                        out += &format!("CPU stopped at PC {:#x}\n", cpu.pc());
+                    if state.cpu.stopped {
+                        out += &format!("CPU stopped at PC {:#x}\n", state.cpu.pc());
                         break;
                     }
                     if args.get_flag("print_ins") {
-                        out += &disas_fmt(cpu, cpu.pc()).0;
+                        let pc = state.cpu.pc();
+                        out += &disas_fmt(&mut state.cpu, pc).0;
                     }
-                    cpu.step();
+                    state.cpu.step();
                 }
                 if args.get_flag("print_regs") {
-                    out += &format!("{}\n", cpu);
+                    out += &format!("{}\n", state.cpu);
                 }
                 if out.is_empty() {
                     Ok(None)
@@ -295,34 +302,36 @@ fn main() -> Result<(), ReplError> {
                         .help("Print all executed instructions")
                 )
                 .about("Run the CPU"),
-            |args, cpu| {
+            |args, state| {
                 let mut out = String::new();
-                while !cpu.stopped {
+                while !state.cpu.stopped {
                     let stop_addr = args
                         .get_one::<String>("stop_addr")
                         .map(|s| parse::<u32>(s))
                         .transpose()?;
-                    if stop_addr.map(|a| cpu.pc() == a).unwrap_or(false) {
+                    if stop_addr.map(|a| state.cpu.pc() == a).unwrap_or(false) {
                         break;
                     }
                     if args.get_flag("print_ins") {
-                        out += &disas_fmt(cpu, cpu.pc()).0;
+                        let pc = state.cpu.pc();
+                        out += &disas_fmt(&mut state.cpu, pc).0;
                     }
-                    cpu.step();
+                    state.cpu.step();
                 }
-                out += &format!("{}\n", cpu);
-                out += &disas_fmt(cpu, cpu.pc()).0;
+                out += &format!("{}\n", state.cpu);
+                let pc = state.cpu.pc();
+                out += &disas_fmt(&mut state.cpu, pc).0;
                 out.pop(); // Remove trailing newline
                 Ok(Some(out))
             },
         )
         .with_command(
             Command::new("reset").about("Reset the cards and CPU, in that order"),
-            |_, cpu| {
-                for card in cpu.bus_mut().cards_mut() {
+            |_, state| {
+                for card in state.cpu.bus_mut().cards_mut() {
                     card.reset();
                 }
-                cpu.reset();
+                state.cpu.reset();
                 Ok(None)
             },
         )
@@ -332,7 +341,7 @@ fn main() -> Result<(), ReplError> {
                 .arg(Arg::new("fmt").short('f').required(true).takes_value(true))
                 .arg(Arg::new("addr").required(true))
                 .about("Peek a memory address"),
-            |args, cpu| {
+            |args, state| {
                 let fmt_str = args.get_one::<String>("fmt").unwrap();
                 if fmt_str.len() != 2 {
                     return Err(Error::Misc("Peek format length must be 2"));
@@ -344,7 +353,7 @@ fn main() -> Result<(), ReplError> {
                 let addr = parse::<u32>(args.get_one::<String>("addr").unwrap())?;
 
                 let mut data = Vec::new();
-                let bus = cpu.bus_mut();
+                let bus = state.cpu.bus_mut();
                 for i in 0..count {
                     match size {
                         PeekSize::Byte => data.push(bus.read_byte(addr + i)? as u32),
@@ -387,15 +396,15 @@ fn main() -> Result<(), ReplError> {
                         .help("Count of instructions to disassemble. Defaults to 1"),
                 )
                 .about("Disassemble a region of memory"),
-            |args, cpu| {
+            |args, state| {
                 let mut addr = args
                     .get_one::<String>("addr")
-                    .map_or(Ok(cpu.pc()), |s| parse::<u32>(s))?;
+                    .map_or(Ok(state.cpu.pc()), |s| parse::<u32>(s))?;
                 let count =
                     parse::<u32>(args.get_one::<String>("count").map_or("1", String::as_str))?;
                 let mut out = String::new();
                 for _ in 0..count {
-                    let (fmt, res) = disas_fmt(cpu, addr);
+                    let (fmt, res) = disas_fmt(&mut state.cpu, addr);
                     out += &fmt;
                     match res {
                         Ok(new_addr) => {
@@ -408,6 +417,24 @@ fn main() -> Result<(), ReplError> {
                 }
                 out.pop(); // Remove trailing newline
                 Ok(Some(out))
+            },
+        )
+        .with_command(
+            Command::new("sym")
+                .arg(
+                    Arg::new("file")
+                    .required(true)
+                    .help("The ELF file to load symbols from"),
+                )
+                .about("Load symbols from an ELF file"),
+            |args, state| {
+                let file = args
+                    .get_one::<String>("file").unwrap();
+                let file = elf::File::open_path(file).unwrap();
+                let symtab = file.get_section(".symtab").ok_or(Error::Misc("Could not find symbol table section"))?;
+                let symbols = file.get_symbols(symtab).unwrap();
+                state.symbols = symbols;
+                Ok(None)
             },
         )
         .with_command(Command::new("quit")
