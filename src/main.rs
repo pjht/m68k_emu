@@ -8,6 +8,7 @@ mod m68k;
 mod ram;
 mod rom;
 mod storage;
+mod term;
 use crate::{
     backplane::Backplane,
     m68k::{BusError, M68K},
