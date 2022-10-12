@@ -14,7 +14,10 @@ use crate::{
     m68k::{BusError, M68K},
 };
 use disas::DisassemblyError;
-use elf::symbol::Symbol;
+use elf::{
+    gabi::{STT_FILE, STT_SECTION},
+    symbol::Symbol,
+};
 use itertools::Itertools;
 use parse_int::parse;
 use reedline_repl_rs::{
@@ -425,11 +428,7 @@ fn main() -> Result<(), ReplError> {
     )
     .with_command(
         Command::new("sym")
-            .arg(
-                Arg::new("file")
-                    .required(true)
-                    .help("The ELF file to load symbols from"),
-            )
+            .arg(Arg::new("file").help("The ELF file to load symbols from"))
             .arg(
                 Arg::new("append")
                     .long("append")
@@ -437,22 +436,33 @@ fn main() -> Result<(), ReplError> {
                     .action(ArgAction::SetTrue)
                     .help("Append the file's symbols to the loaded list of symbols"),
             )
-            .about("Load symbols from an ELF file"),
+            .about("Load symbols from an ELF file, or list symbols if no file provided"),
         |args, state| {
-            let file = args.get_one::<String>("file").unwrap();
-            let file = elf::File::open_path(file).map_err(<Box<dyn error::Error>>::from)?;
-            let symtab = file
-                .get_section(".symtab")
-                .ok_or(Error::Misc("Could not find symbol table section"))?;
-            let symbols = file
-                .get_symbols(&symtab)
-                .map_err(<Box<dyn error::Error>>::from)?;
-            if args.get_flag("append") {
-                state.symbols.extend_from_slice(&symbols[..]);
+            if let Some(file) = args.get_one::<String>("file") {
+                let file = elf::File::open_path(file).map_err(<Box<dyn error::Error>>::from)?;
+                let symtab = file
+                    .get_section(".symtab")
+                    .ok_or(Error::Misc("Could not find symbol table section"))?;
+                let symbols = file
+                    .get_symbols(&symtab)
+                    .map_err(<Box<dyn error::Error>>::from)?;
+                if args.get_flag("append") {
+                    state.symbols.extend_from_slice(&symbols[..]);
+                } else {
+                    state.symbols = symbols;
+                }
+                Ok(None)
             } else {
-                state.symbols = symbols;
+                #[allow(unstable_name_collisions)]
+                Ok(Some(
+                    state
+                        .symbols
+                        .iter()
+                        .map(ToString::to_string)
+                        .intersperse("\n".to_string())
+                        .collect::<String>(),
+                ))
             }
-            Ok(None)
         },
     )
     .with_command(
