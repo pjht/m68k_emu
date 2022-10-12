@@ -359,7 +359,7 @@ fn main() -> Result<(), ReplError> {
             let fmt = PeekFormat::try_from(fmt_str.chars().next().unwrap())?;
             let size = PeekSize::try_from(fmt_str.chars().nth(1).unwrap())?;
             let count = parse::<u32>(args.get_one::<String>("count").map_or("1", String::as_str))?;
-            let addr = parse::<u32>(args.get_one::<String>("addr").unwrap())?;
+            let addr = parse_addr(args.get_one::<String>("addr").unwrap(), &state.symbols)?;
 
             let mut data = Vec::new();
             let bus = state.cpu.bus_mut();
@@ -405,7 +405,7 @@ fn main() -> Result<(), ReplError> {
         |args, state| {
             let mut addr = args
                 .get_one::<String>("addr")
-                .map_or(Ok(state.cpu.pc()), |s| parse::<u32>(s))?;
+                .map_or(Ok(state.cpu.pc()), |s| parse_addr(s, &state.symbols))?;
             let count = parse::<u32>(args.get_one::<String>("count").map_or("1", String::as_str))?;
             let mut out = String::new();
             for _ in 0..count {
