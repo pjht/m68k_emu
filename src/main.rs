@@ -445,7 +445,11 @@ fn main() -> Result<(), ReplError> {
                     .ok_or(Error::Misc("Could not find symbol table section"))?;
                 let symbols = file
                     .get_symbols(&symtab)
-                    .map_err(<Box<dyn error::Error>>::from)?;
+                    .map_err(<Box<dyn error::Error>>::from)?
+                    .into_iter()
+                    .skip(1) // The first symbol is a useless null symbol
+                    .filter(|sym| sym.symtype.0 != STT_FILE && sym.symtype.0 != STT_SECTION)
+                    .collect::<Vec<_>>();
                 if args.get_flag("append") {
                     state.symbols.extend_from_slice(&symbols[..]);
                 } else {
