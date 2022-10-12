@@ -315,19 +315,9 @@ fn main() -> Result<(), ReplError> {
         |args, state| {
             let mut out = String::new();
             while !state.cpu.stopped {
-                let stop_addr = args.get_one::<String>("stop_addr");
-
-                let stop_addr = stop_addr
-                    .map(|s| {
-                        parse::<u32>(s).or_else(|_| {
-                            state
-                                .symbols
-                                .iter()
-                                .find(|sym| &sym.name == s)
-                                .map(|sym| sym.value as u32)
-                                .ok_or(Error::Misc("No such symbol"))
-                        })
-                    })
+                let stop_addr = args
+                    .get_one::<String>("stop_addr")
+                    .map(|s| parse_addr(s, &state.symbols))
                     .transpose()?;
                 if stop_addr.map(|a| state.cpu.pc() == a).unwrap_or(false) {
                     break;
@@ -473,4 +463,14 @@ fn disas_fmt(cpu: &mut M68K, addr: u32) -> (String, Result<u32, DisassemblyError
         Ok((ins, new_addr)) => (format!("0x{:x}: {}\n", addr, ins), Ok(new_addr)),
         Err(e) => (format!("0x{:x}: {}\n", addr, e), Err(e)),
     }
+}
+
+fn parse_addr(addr: &str, symbols: &[Symbol]) -> Result<u32, Error> {
+    parse::<u32>(addr).or_else(|_| {
+        symbols
+            .iter()
+            .find(|sym| sym.name == addr)
+            .map(|sym| sym.value as u32)
+            .ok_or(Error::Misc("No such symbol"))
+    })
 }
