@@ -91,8 +91,6 @@ enum PeekFormat {
 }
 
 impl PeekFormat {
-    /// Note: If the peek size was Byte or Word, the u8/u16 should be sign-extened to a u32 instaed
-    /// of directly cast. (u8/16 as i8/16 as i32 as u32) to allow Decimal to work.
     pub fn format(self, num: u32, size: PeekSize) -> String {
         match self {
             Self::Octal => format!("Oo{:0>width$o}", num, width = size.byte_count()),
