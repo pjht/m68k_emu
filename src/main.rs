@@ -360,7 +360,6 @@ fn main() -> Result<(), ReplError> {
             let size = PeekSize::try_from(fmt_str.chars().nth(1).unwrap())?;
             let count = parse::<u32>(args.get_one::<String>("count").map_or("1", String::as_str))?;
             let addr = parse_addr(args.get_one::<String>("addr").unwrap(), &state.symbols)?;
-
             let mut data = Vec::new();
             let bus = state.cpu.bus_mut();
             for i in 0..count {
@@ -431,6 +430,13 @@ fn main() -> Result<(), ReplError> {
                     .required(true)
                     .help("The ELF file to load symbols from"),
             )
+            .arg(
+                Arg::new("append")
+                    .long("append")
+                    .short('a')
+                    .action(ArgAction::SetTrue)
+                    .help("Append the file's symbols to the loaded list of symbols"),
+            )
             .about("Load symbols from an ELF file"),
         |args, state| {
             let file = args.get_one::<String>("file").unwrap();
@@ -441,7 +447,11 @@ fn main() -> Result<(), ReplError> {
             let symbols = file
                 .get_symbols(&symtab)
                 .map_err(<Box<dyn error::Error>>::from)?;
-            state.symbols = symbols;
+            if args.get_flag("append") {
+                state.symbols.extend_from_slice(&symbols[..]);
+            } else {
+                state.symbols = symbols;
+            }
             Ok(None)
         },
     )
