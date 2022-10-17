@@ -16,7 +16,7 @@ use crate::{
 use disas::DisassemblyError;
 use elf::{
     gabi::{STT_FILE, STT_SECTION},
-    symbol::Symbol,
+    symbol::Symbol as ElfSymbol,
 };
 use itertools::Itertools;
 use parse_int::parse;
@@ -26,8 +26,15 @@ use reedline_repl_rs::{
 };
 use serde_yaml::Mapping;
 use std::{
-    collections::HashMap, convert::TryFrom, error, fmt::Display, fs, num::ParseIntError,
-    path::Path, process,
+    collections::HashMap,
+    convert::TryFrom,
+    error,
+    fmt::Display,
+    fs::{self, File},
+    io,
+    num::ParseIntError,
+    path::Path,
+    process,
 };
 
 #[derive(Debug)]
@@ -42,6 +49,13 @@ enum Error {
     MiscDyn(Box<dyn error::Error>),
     InvalidSymbolTable,
     InvalidSymbolName,
+    Io(io::Error),
+}
+
+impl From<io::Error> for Error {
+    fn from(v: io::Error) -> Self {
+        Self::Io(v)
+    }
 }
 
 impl From<Box<dyn error::Error>> for Error {
@@ -87,6 +101,7 @@ impl Display for Error {
             Self::MiscDyn(e) => e.fmt(f),
             Self::InvalidSymbolTable => f.write_str("Invalid symbol table"),
             Self::InvalidSymbolName => f.write_str("Invalid symbol name"),
+            Self::Io(e) => e.fmt(f),
         }
     }
 }
@@ -214,6 +229,31 @@ impl<'a> Display for LocationDisplayer<'a> {
             )),
             Location::Address(addr) => f.write_fmt(format_args!("{:#x}", addr)),
         }
+    }
+}
+
+struct Symbol {
+    section: u16,
+    value: u32,
+    size: u32,
+}
+
+impl From<ElfSymbol> for Symbol {
+    fn from(sym: ElfSymbol) -> Self {
+        Self {
+            section: sym.st_shndx,
+            value: sym.st_value as u32,
+            size: sym.st_size as u32,
+        }
+    }
+}
+
+impl Display for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "Value: {:#010x} Size: {:#06x} Section: {}",
+            self.value, self.size, self.section
+        ))
     }
 }
 
@@ -514,8 +554,8 @@ fn main() -> Result<(), ReplError> {
                 for (table_name, table) in state.symbol_tables.iter() {
                     out += table_name;
                     out += "\n";
-                    for symbol in table.values() {
-                        out += &format!("{}\n", symbol);
+                    for (name, symbol) in table.iter() {
+                        out += &format!("{name}: {symbol}\n");
                     }
                 }
                 out.pop(); // Remove trailing newline
@@ -557,28 +597,28 @@ fn load_symbol_table(
     append: bool,
     symbol_tables: &mut HashMap<String, HashMap<String, Symbol>>,
 ) -> Result<(), Error> {
-    let file = elf::File::open_path(path).map_err(<Box<dyn error::Error>>::from)?;
-    let symtab = file
-        .get_section(".symtab")
-        .ok_or(Error::Misc("Could not find symbol table section"))?;
-    let symbols = file
-        .get_symbols(&symtab)
+    let file =
+        elf::File::open_stream(&mut File::open(path)?).map_err(<Box<dyn error::Error>>::from)?;
+    let (symtab, symstrtab) = file
+        .symbol_table()
         .map_err(<Box<dyn error::Error>>::from)?
-        .into_iter()
-        .skip(1) // The first symbol is a useless null symbol
-        .filter(|sym| sym.symtype.0 != STT_FILE && sym.symtype.0 != STT_SECTION)
-        .map(|sym| (sym.name.clone(), sym))
+        .ok_or(Error::Misc("No symbol table in file"))?;
+    let symbols = symtab
+        .iter()
+        .skip(1)
+        .filter(|sym| sym.st_symtype().0 != STT_FILE && sym.st_symtype().0 != STT_SECTION)
+        .map(|sym| {
+            (
+                symstrtab.get(sym.st_name as usize).unwrap().to_string(),
+                Symbol::from(sym),
+            )
+        })
         .collect::<HashMap<_, _>>();
     let basename = Path::new(&path).file_name().unwrap().to_str().unwrap();
-    if append {
-        if let Some(_entry) = symbol_tables.get_mut(basename) {
-        } else {
-            symbol_tables.insert(basename.to_string(), symbols);
-        }
-    } else {
+    if !append {
         symbol_tables.clear();
-        symbol_tables.insert(basename.to_string(), symbols);
     }
+    symbol_tables.insert(basename.to_string(), symbols);
     Ok(())
 }
 
