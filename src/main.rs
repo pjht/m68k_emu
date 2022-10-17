@@ -640,28 +640,23 @@ fn parse_location(
     symbol_tables: &HashMap<String, HashMap<String, Symbol>>,
 ) -> Result<Location, Error> {
     parse::<u32>(location).map(Location::Address).or_else(|_| {
-        let (table_name, symbol_name) = location.split_once(':').unwrap_or(("", location));
+        let (mut table_name, symbol_name) = location.split_once(':').unwrap_or(("", location));
         if table_name.is_empty() {
-            for (curr_table_name, table) in symbol_tables.iter() {
-                if table.contains_key(symbol_name) {
-                    return Ok(Location::Symbol((
-                        curr_table_name.to_string(),
-                        symbol_name.to_string(),
-                    )));
-                }
-            }
-            Err(Error::InvalidSymbolName)
-        } else if symbol_tables
+            table_name = symbol_tables
+                .iter()
+                .find(|(_, table)| table.contains_key(symbol_name))
+                .ok_or(Error::InvalidSymbolName)?
+                .0;
+        } else if !symbol_tables
             .get(table_name)
             .ok_or(Error::InvalidSymbolTable)?
             .contains_key(symbol_name)
         {
-            Ok(Location::Symbol((
-                table_name.to_string(),
-                symbol_name.to_string(),
-            )))
-        } else {
-            Err(Error::InvalidSymbolName)
+            return Err(Error::InvalidSymbolName);
         }
+        Ok(Location::Symbol((
+            table_name.to_string(),
+            symbol_name.to_string(),
+        )))
     })
 }
