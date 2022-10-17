@@ -535,6 +535,22 @@ fn main() -> Result<(), ReplError> {
         },
     )
     .with_command(
+        Command::new("resolve")
+            .arg(
+                Arg::new("location")
+                    .help("The location to resolve")
+                    .required(true),
+            )
+            .help("Resolve a location to an address"),
+        |args, state| {
+            let location = args.get_one::<String>("location").unwrap();
+            Ok(Some(format!(
+                "{}",
+                parse_location(location, &state.symbol_tables)?.displayer(&state.symbol_tables)
+            )))
+        },
+    )
+    .with_command(
         Command::new("quit")
             .visible_alias("q")
             .visible_alias("exit")
