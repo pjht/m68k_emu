@@ -25,7 +25,10 @@ use reedline_repl_rs::{
     Error as ReplError, Repl,
 };
 use serde_yaml::Mapping;
-use std::{convert::TryFrom, error, fmt::Display, fs, num::ParseIntError, process};
+use std::{
+    collections::HashMap, convert::TryFrom, error, fmt::Display, fs, num::ParseIntError,
+    path::Path, process,
+};
 
 #[derive(Debug)]
 enum Error {
@@ -37,6 +40,8 @@ enum Error {
     Disassembly(DisassemblyError<BusError>),
     Misc(&'static str),
     MiscDyn(Box<dyn error::Error>),
+    InvalidSymbolTable,
+    InvalidSymbolName,
 }
 
 impl From<Box<dyn error::Error>> for Error {
@@ -80,6 +85,8 @@ impl Display for Error {
             Self::Disassembly(e) => e.fmt(f),
             Self::Misc(s) => f.write_str(s),
             Self::MiscDyn(e) => e.fmt(f),
+            Self::InvalidSymbolTable => f.write_str("Invalid symbol table"),
+            Self::InvalidSymbolName => f.write_str("Invalid symbol name"),
         }
     }
 }
@@ -165,9 +172,54 @@ impl TryFrom<char> for PeekSize {
     }
 }
 
+enum Location {
+    Symbol((String, String)),
+    Address(u32),
+}
+
+impl Location {
+    pub fn addr(&self, symbol_tables: &HashMap<String, HashMap<String, Symbol>>) -> u32 {
+        match self {
+            Self::Symbol((table, sym)) => {
+                symbol_tables.get(table).unwrap().get(sym).unwrap().value as u32
+            }
+            Self::Address(addr) => *addr,
+        }
+    }
+
+    pub fn displayer<'a>(
+        &'a self,
+        symbol_tables: &'a HashMap<String, HashMap<String, Symbol>>,
+    ) -> LocationDisplayer<'a> {
+        LocationDisplayer {
+            location: self,
+            symbol_tables,
+        }
+    }
+}
+
+struct LocationDisplayer<'a> {
+    location: &'a Location,
+    symbol_tables: &'a HashMap<String, HashMap<String, Symbol>>,
+}
+
+impl<'a> Display for LocationDisplayer<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.location {
+            Location::Symbol((table, sym)) => f.write_fmt(format_args!(
+                "{}:{} ({:#x})",
+                table,
+                sym,
+                self.location.addr(self.symbol_tables)
+            )),
+            Location::Address(addr) => f.write_fmt(format_args!("{:#x}", addr)),
+        }
+    }
+}
+
 struct EmuState {
     cpu: M68K,
-    symbols: Vec<Symbol>,
+    symbol_tables: HashMap<String, HashMap<String, Symbol>>,
 }
 
 fn main() -> Result<(), ReplError> {
@@ -195,7 +247,7 @@ fn main() -> Result<(), ReplError> {
     }
     Repl::<_, Error>::new(EmuState {
         cpu: M68K::new(backplane),
-        symbols: Vec::new(),
+        symbol_tables: HashMap::new(),
     })
     .with_name("68KEmu")
     .with_version("0.1.0")
@@ -320,7 +372,7 @@ fn main() -> Result<(), ReplError> {
             while !state.cpu.stopped {
                 let stop_addr = args
                     .get_one::<String>("stop_addr")
-                    .map(|s| parse_addr(s, &state.symbols))
+                    .map(|s| parse_location_address(s, &state.symbol_tables))
                     .transpose()?;
                 if stop_addr.map(|a| state.cpu.pc() == a).unwrap_or(false) {
                     break;
@@ -362,7 +414,10 @@ fn main() -> Result<(), ReplError> {
             let fmt = PeekFormat::try_from(fmt_str.chars().next().unwrap())?;
             let size = PeekSize::try_from(fmt_str.chars().nth(1).unwrap())?;
             let count = parse::<u32>(args.get_one::<String>("count").map_or("1", String::as_str))?;
-            let addr = parse_addr(args.get_one::<String>("addr").unwrap(), &state.symbols)?;
+            let addr = parse_location_address(
+                args.get_one::<String>("addr").unwrap(),
+                &state.symbol_tables,
+            )?;
             let mut data = Vec::new();
             let bus = state.cpu.bus_mut();
             for i in 0..count {
@@ -407,7 +462,9 @@ fn main() -> Result<(), ReplError> {
         |args, state| {
             let mut addr = args
                 .get_one::<String>("addr")
-                .map_or(Ok(state.cpu.pc()), |s| parse_addr(s, &state.symbols))?;
+                .map_or(Ok(state.cpu.pc()), |s| {
+                    parse_location_address(s, &state.symbol_tables)
+                })?;
             let count = parse::<u32>(args.get_one::<String>("count").map_or("1", String::as_str))?;
             let mut out = String::new();
             for _ in 0..count {
@@ -438,8 +495,9 @@ fn main() -> Result<(), ReplError> {
             )
             .about("Load symbols from an ELF file, or list symbols if no file provided"),
         |args, state| {
-            if let Some(file) = args.get_one::<String>("file") {
-                let file = elf::File::open_path(file).map_err(<Box<dyn error::Error>>::from)?;
+            if let Some(file_path) = args.get_one::<String>("file") {
+                let file =
+                    elf::File::open_path(file_path).map_err(<Box<dyn error::Error>>::from)?;
                 let symtab = file
                     .get_section(".symtab")
                     .ok_or(Error::Misc("Could not find symbol table section"))?;
@@ -449,23 +507,30 @@ fn main() -> Result<(), ReplError> {
                     .into_iter()
                     .skip(1) // The first symbol is a useless null symbol
                     .filter(|sym| sym.symtype.0 != STT_FILE && sym.symtype.0 != STT_SECTION)
-                    .collect::<Vec<_>>();
+                    .map(|sym| (sym.name.clone(), sym))
+                    .collect::<HashMap<_, _>>();
+                let basename = Path::new(&file_path).file_name().unwrap().to_str().unwrap();
                 if args.get_flag("append") {
-                    state.symbols.extend_from_slice(&symbols[..]);
+                    if let Some(_entry) = state.symbol_tables.get_mut(basename) {
+                    } else {
+                        state.symbol_tables.insert(basename.to_string(), symbols);
+                    }
                 } else {
-                    state.symbols = symbols;
+                    state.symbol_tables.clear();
+                    state.symbol_tables.insert(basename.to_string(), symbols);
                 }
                 Ok(None)
             } else {
-                #[allow(unstable_name_collisions)]
-                Ok(Some(
-                    state
-                        .symbols
-                        .iter()
-                        .map(ToString::to_string)
-                        .intersperse("\n".to_string())
-                        .collect::<String>(),
-                ))
+                let mut out = String::new();
+                for (table_name, table) in state.symbol_tables.iter() {
+                    out += table_name;
+                    out += "\n";
+                    for symbol in table.values() {
+                        out += &format!("{}\n", symbol);
+                    }
+                }
+                out.pop(); // Remove trailing newline
+                Ok(Some(out))
             }
         },
     )
@@ -489,12 +554,40 @@ fn disas_fmt(cpu: &mut M68K, addr: u32) -> (String, Result<u32, DisassemblyError
     }
 }
 
-fn parse_addr(addr: &str, symbols: &[Symbol]) -> Result<u32, Error> {
-    parse::<u32>(addr).or_else(|_| {
-        symbols
-            .iter()
-            .find(|sym| sym.name == addr)
-            .map(|sym| sym.value as u32)
-            .ok_or(Error::Misc("No such symbol"))
+fn parse_location_address(
+    location: &str,
+    symbol_tables: &HashMap<String, HashMap<String, Symbol>>,
+) -> Result<u32, Error> {
+    parse_location(location, symbol_tables).map(|l| l.addr(symbol_tables))
+}
+
+fn parse_location(
+    location: &str,
+    symbol_tables: &HashMap<String, HashMap<String, Symbol>>,
+) -> Result<Location, Error> {
+    parse::<u32>(location).map(Location::Address).or_else(|_| {
+        let (table_name, symbol_name) = location.split_once(':').unwrap_or(("", location));
+        if table_name.is_empty() {
+            for (curr_table_name, table) in symbol_tables.iter() {
+                if table.contains_key(symbol_name) {
+                    return Ok(Location::Symbol((
+                        curr_table_name.to_string(),
+                        symbol_name.to_string(),
+                    )));
+                }
+            }
+            Err(Error::InvalidSymbolName)
+        } else if symbol_tables
+            .get(table_name)
+            .ok_or(Error::InvalidSymbolTable)?
+            .contains_key(symbol_name)
+        {
+            Ok(Location::Symbol((
+                table_name.to_string(),
+                symbol_name.to_string(),
+            )))
+        } else {
+            Err(Error::InvalidSymbolName)
+        }
     })
 }
