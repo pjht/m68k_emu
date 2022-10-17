@@ -193,7 +193,7 @@ enum Location {
 }
 
 impl Location {
-    pub fn addr(&self, symbol_tables: &HashMap<String, HashMap<String, Symbol>>) -> u32 {
+    pub fn addr(&self, symbol_tables: &SymbolTables) -> u32 {
         match self {
             Self::Symbol((table, sym)) => {
                 symbol_tables.get(table).unwrap().get(sym).unwrap().value as u32
@@ -202,10 +202,7 @@ impl Location {
         }
     }
 
-    pub fn displayer<'a>(
-        &'a self,
-        symbol_tables: &'a HashMap<String, HashMap<String, Symbol>>,
-    ) -> LocationDisplayer<'a> {
+    pub fn displayer<'a>(&'a self, symbol_tables: &'a SymbolTables) -> LocationDisplayer<'a> {
         LocationDisplayer {
             location: self,
             symbol_tables,
@@ -215,7 +212,7 @@ impl Location {
 
 struct LocationDisplayer<'a> {
     location: &'a Location,
-    symbol_tables: &'a HashMap<String, HashMap<String, Symbol>>,
+    symbol_tables: &'a SymbolTables,
 }
 
 impl<'a> Display for LocationDisplayer<'a> {
@@ -257,9 +254,11 @@ impl Display for Symbol {
     }
 }
 
+type SymbolTables = HashMap<String, HashMap<String, Symbol>>;
+
 struct EmuState {
     cpu: M68K,
-    symbol_tables: HashMap<String, HashMap<String, Symbol>>,
+    symbol_tables: SymbolTables,
 }
 
 fn main() -> Result<(), ReplError> {
@@ -595,10 +594,7 @@ fn main() -> Result<(), ReplError> {
     .run()
 }
 
-fn load_symbol_table(
-    path: &str,
-    symbol_tables: &mut HashMap<String, HashMap<String, Symbol>>,
-) -> Result<(), Error> {
+fn load_symbol_table(path: &str, symbol_tables: &mut SymbolTables) -> Result<(), Error> {
     let file =
         elf::File::open_stream(&mut File::open(path)?).map_err(<Box<dyn error::Error>>::from)?;
     let (symtab, symstrtab) = file
@@ -628,17 +624,11 @@ fn disas_fmt(cpu: &mut M68K, addr: u32) -> (String, Result<u32, DisassemblyError
     }
 }
 
-fn parse_location_address(
-    location: &str,
-    symbol_tables: &HashMap<String, HashMap<String, Symbol>>,
-) -> Result<u32, Error> {
+fn parse_location_address(location: &str, symbol_tables: &SymbolTables) -> Result<u32, Error> {
     parse_location(location, symbol_tables).map(|l| l.addr(symbol_tables))
 }
 
-fn parse_location(
-    location: &str,
-    symbol_tables: &HashMap<String, HashMap<String, Symbol>>,
-) -> Result<Location, Error> {
+fn parse_location(location: &str, symbol_tables: &SymbolTables) -> Result<Location, Error> {
     parse::<u32>(location).map(Location::Address).or_else(|_| {
         let (mut table_name, symbol_name) = location.split_once(':').unwrap_or(("", location));
         if table_name.is_empty() {
