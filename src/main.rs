@@ -293,7 +293,7 @@ fn main() -> Result<(), ReplError> {
     }) {
         for path in initial_tables {
             let path = path.as_str().expect("Symbol table path is not string");
-            load_symbol_table(path, true, &mut symbol_tables).unwrap();
+            load_symbol_table(path, &mut symbol_tables).unwrap();
         }
     }
     Repl::<_, Error>::new(EmuState {
@@ -547,7 +547,10 @@ fn main() -> Result<(), ReplError> {
             .about("Load symbols from an ELF file, or list symbols if no file provided"),
         |args, state| {
             if let Some(file_path) = args.get_one::<String>("file") {
-                load_symbol_table(file_path, args.get_flag("append"), &mut state.symbol_tables)?;
+                if !args.get_flag("append") {
+                    state.symbol_tables.clear();
+                }
+                load_symbol_table(file_path, &mut state.symbol_tables)?;
                 Ok(None)
             } else {
                 let mut out = String::new();
@@ -594,7 +597,6 @@ fn main() -> Result<(), ReplError> {
 
 fn load_symbol_table(
     path: &str,
-    append: bool,
     symbol_tables: &mut HashMap<String, HashMap<String, Symbol>>,
 ) -> Result<(), Error> {
     let file =
@@ -615,9 +617,6 @@ fn load_symbol_table(
         })
         .collect::<HashMap<_, _>>();
     let basename = Path::new(&path).file_name().unwrap().to_str().unwrap();
-    if !append {
-        symbol_tables.clear();
-    }
     symbol_tables.insert(basename.to_string(), symbols);
     Ok(())
 }
