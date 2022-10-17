@@ -1,7 +1,9 @@
 ---
 cards:
   - type: rom
-    image: rom.bin
+    image: rom/rom.bin
   - type: ram
     size: 4096
   - type: storage
+symbol_tables:
+  - rom/rom.elf

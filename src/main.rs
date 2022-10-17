@@ -245,9 +245,20 @@ fn main() -> Result<(), ReplError> {
             Err(e) => panic!("{}", e),
         };
     }
+    let mut symbol_tables = HashMap::new();
+    if let Some(initial_tables) = config.get("symbol_tables").map(|initial_tables| {
+        initial_tables
+            .as_sequence()
+            .expect("Symbol table config is not list")
+    }) {
+        for path in initial_tables {
+            let path = path.as_str().expect("Symbol table path is not string");
+            load_symbol_table(path, true, &mut symbol_tables).unwrap();
+        }
+    }
     Repl::<_, Error>::new(EmuState {
         cpu: M68K::new(backplane),
-        symbol_tables: HashMap::new(),
+        symbol_tables,
     })
     .with_name("68KEmu")
     .with_version("0.1.0")
@@ -496,29 +507,7 @@ fn main() -> Result<(), ReplError> {
             .about("Load symbols from an ELF file, or list symbols if no file provided"),
         |args, state| {
             if let Some(file_path) = args.get_one::<String>("file") {
-                let file =
-                    elf::File::open_path(file_path).map_err(<Box<dyn error::Error>>::from)?;
-                let symtab = file
-                    .get_section(".symtab")
-                    .ok_or(Error::Misc("Could not find symbol table section"))?;
-                let symbols = file
-                    .get_symbols(&symtab)
-                    .map_err(<Box<dyn error::Error>>::from)?
-                    .into_iter()
-                    .skip(1) // The first symbol is a useless null symbol
-                    .filter(|sym| sym.symtype.0 != STT_FILE && sym.symtype.0 != STT_SECTION)
-                    .map(|sym| (sym.name.clone(), sym))
-                    .collect::<HashMap<_, _>>();
-                let basename = Path::new(&file_path).file_name().unwrap().to_str().unwrap();
-                if args.get_flag("append") {
-                    if let Some(_entry) = state.symbol_tables.get_mut(basename) {
-                    } else {
-                        state.symbol_tables.insert(basename.to_string(), symbols);
-                    }
-                } else {
-                    state.symbol_tables.clear();
-                    state.symbol_tables.insert(basename.to_string(), symbols);
-                }
+                load_symbol_table(file_path, args.get_flag("append"), &mut state.symbol_tables)?;
                 Ok(None)
             } else {
                 let mut out = String::new();
@@ -561,6 +550,36 @@ fn main() -> Result<(), ReplError> {
     .with_command(Command::new("q").hide(true), |_, _| process::exit(0))
     .with_command(Command::new("exit").hide(true), |_, _| process::exit(0))
     .run()
+}
+
+fn load_symbol_table(
+    path: &str,
+    append: bool,
+    symbol_tables: &mut HashMap<String, HashMap<String, Symbol>>,
+) -> Result<(), Error> {
+    let file = elf::File::open_path(path).map_err(<Box<dyn error::Error>>::from)?;
+    let symtab = file
+        .get_section(".symtab")
+        .ok_or(Error::Misc("Could not find symbol table section"))?;
+    let symbols = file
+        .get_symbols(&symtab)
+        .map_err(<Box<dyn error::Error>>::from)?
+        .into_iter()
+        .skip(1) // The first symbol is a useless null symbol
+        .filter(|sym| sym.symtype.0 != STT_FILE && sym.symtype.0 != STT_SECTION)
+        .map(|sym| (sym.name.clone(), sym))
+        .collect::<HashMap<_, _>>();
+    let basename = Path::new(&path).file_name().unwrap().to_str().unwrap();
+    if append {
+        if let Some(_entry) = symbol_tables.get_mut(basename) {
+        } else {
+            symbol_tables.insert(basename.to_string(), symbols);
+        }
+    } else {
+        symbol_tables.clear();
+        symbol_tables.insert(basename.to_string(), symbols);
+    }
+    Ok(())
 }
 
 fn disas_fmt(cpu: &mut M68K, addr: u32) -> (String, Result<u32, DisassemblyError<BusError>>) {
