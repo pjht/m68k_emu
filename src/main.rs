@@ -39,7 +39,12 @@ use std::{
     process,
 };
 
-pub type SymbolTables = LinkedHashMap<String, HashMap<String, Symbol>>;
+pub struct SymbolTable {
+    symbols: HashMap<String, Symbol>,
+    breakpoints: Vec<String>,
+}
+
+pub type SymbolTables = LinkedHashMap<String, SymbolTable>;
 
 #[derive(Copy, Clone, Debug)]
 enum PeekFormat {
@@ -141,6 +146,7 @@ struct EmuConfig<'a> {
 struct EmuState {
     cpu: M68K,
     symbol_tables: SymbolTables,
+    address_breakpoints: Vec<u32>,
 }
 
 fn main() -> Result<(), ReplError> {
@@ -158,12 +164,19 @@ fn main() -> Result<(), ReplError> {
     if let Some(initial_tables) = config.symbol_tables {
         for path in initial_tables {
             let table_name = Path::new(&path).file_name().unwrap().to_str().unwrap();
-            symbol_tables.insert(table_name.to_string(), read_symbol_table(path).unwrap());
+            symbol_tables.insert(
+                table_name.to_string(),
+                SymbolTable {
+                    symbols: read_symbol_table(path).unwrap(),
+                    breakpoints: Vec::new(),
+                },
+            );
         }
     }
     Repl::<_, Error>::new(EmuState {
         cpu: M68K::new(backplane),
         symbol_tables,
+        address_breakpoints: Vec::new(),
     })
     .with_name("68KEmu")
     .with_version("0.1.0")
@@ -412,20 +425,35 @@ fn main() -> Result<(), ReplError> {
             .about("Load symbols from an ELF file, or list symbols if no file provided"),
         |args, state| {
             if let Some(file_path) = args.get_one::<String>("file") {
+                let table_name = Path::new(&file_path).file_name().unwrap().to_str().unwrap();
+                let symbols = read_symbol_table(file_path)?;
+                let breakpoints = if let Some(table) = state.symbol_tables.get(table_name) {
+                    table
+                        .breakpoints
+                        .iter()
+                        .cloned()
+                        .filter(|sym| symbols.contains_key(sym))
+                        .collect::<Vec<_>>()
+                } else {
+                    Vec::new()
+                };
                 if !args.get_flag("append") {
                     state.symbol_tables.clear();
                 }
-                let table_name = Path::new(&file_path).file_name().unwrap().to_str().unwrap();
-                state
-                    .symbol_tables
-                    .insert(table_name.to_string(), read_symbol_table(file_path)?);
+                state.symbol_tables.insert(
+                    table_name.to_string(),
+                    SymbolTable {
+                        symbols,
+                        breakpoints,
+                    },
+                );
                 Ok(None)
             } else {
                 let mut out = String::new();
                 for (table_name, table) in state.symbol_tables.iter() {
                     out += table_name;
                     out += "\n";
-                    for (name, symbol) in table.iter() {
+                    for (name, symbol) in table.symbols.iter() {
                         out += &format!("{name}: {symbol}\n");
                     }
                 }
@@ -499,12 +527,13 @@ fn parse_location(location: &str, symbol_tables: &SymbolTables) -> Result<Locati
         if table_name.is_empty() {
             table_name = symbol_tables
                 .iter()
-                .find(|(_, table)| table.contains_key(symbol_name))
+                .find(|(_, table)| table.symbols.contains_key(symbol_name))
                 .ok_or(Error::InvalidSymbolName)?
                 .0;
         } else if !symbol_tables
             .get(table_name)
             .ok_or(Error::InvalidSymbolTable)?
+            .symbols
             .contains_key(symbol_name)
         {
             return Err(Error::InvalidSymbolName);
