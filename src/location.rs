@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use crate::SymbolTables;
 
+#[derive(Debug)]
 pub enum Location {
     Symbol((String, String)),
     Address(u32),

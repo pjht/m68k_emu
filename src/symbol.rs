@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use elf::symbol::Symbol as ElfSymbol;
 
+#[derive(Debug)]
 pub struct Symbol {
     section: u16,
     value: u32,

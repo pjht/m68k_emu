@@ -39,6 +39,7 @@ use std::{
     process,
 };
 
+#[derive(Debug)]
 pub struct SymbolTable {
     symbols: HashMap<String, Symbol>,
     breakpoints: Vec<String>,
