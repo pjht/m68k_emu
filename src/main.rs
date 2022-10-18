@@ -154,7 +154,6 @@ struct EmuState {
 fn main() -> Result<(), ReplError> {
     let config_str = fs::read_to_string("config.yaml").expect("Could not read config file");
     let config: EmuConfig = serde_yaml::from_str(&config_str).expect("Could not parse config file");
-    dbg!(&config);
     let mut backplane = Backplane::new();
     for card in config.cards {
         match backplane.add_card(card.typ, &card.config) {
