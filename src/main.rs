@@ -27,6 +27,7 @@ use reedline_repl_rs::{
     clap::{Arg, ArgAction, Command},
     Error as ReplError, Repl,
 };
+use serde::Deserialize;
 use serde_yaml::Mapping;
 use std::{
     collections::HashMap,
@@ -120,42 +121,41 @@ impl TryFrom<char> for PeekSize {
     }
 }
 
+#[derive(Deserialize, Debug)]
+struct CardConfig<'a> {
+    #[serde(rename = "type")]
+    typ: &'a str,
+    #[serde(flatten)]
+    config: Mapping,
+}
+
+#[derive(Deserialize, Debug)]
+struct EmuConfig<'a> {
+    #[serde(borrow)]
+    cards: Vec<CardConfig<'a>>,
+    #[serde(borrow)]
+    symbol_tables: Option<Vec<&'a str>>,
+}
+
 struct EmuState {
     cpu: M68K,
     symbol_tables: SymbolTables,
 }
 
 fn main() -> Result<(), ReplError> {
-    let config: Mapping = serde_yaml::from_str(
-        &fs::read_to_string("config.yaml").expect("Could not read config file"),
-    )
-    .expect("Could not parse config file");
+    let config_str = fs::read_to_string("config.yaml").expect("Could not read config file");
+    let config: EmuConfig = serde_yaml::from_str(&config_str).expect("Could not parse config file");
+    dbg!(&config);
     let mut backplane = Backplane::new();
-    for card in config
-        .get("cards")
-        .expect("Could not get cards config info")
-        .as_sequence()
-        .expect("Cards config is not list")
-    {
-        let card = card.as_mapping().expect("Card config not mapping");
-        let typ = card
-            .get("type")
-            .expect("Card config has no type")
-            .as_str()
-            .expect("Card type is not string");
-        match backplane.add_card(typ, card) {
+    for card in config.cards {
+        match backplane.add_card(card.typ, &card.config) {
             Ok(_) => (),
             Err(e) => panic!("{}", e),
         };
     }
     let mut symbol_tables = HashMap::new();
-    if let Some(initial_tables) = config.get("symbol_tables").map(|initial_tables| {
-        initial_tables
-            .as_sequence()
-            .expect("Symbol table config is not list")
-    }) {
+    if let Some(initial_tables) = config.symbol_tables {
         for path in initial_tables {
-            let path = path.as_str().expect("Symbol table path is not string");
             let table_name = Path::new(&path).file_name().unwrap().to_str().unwrap();
             symbol_tables.insert(table_name.to_string(), read_symbol_table(path).unwrap());
         }
