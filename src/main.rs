@@ -23,6 +23,7 @@ use disas::DisassemblyError;
 use elf::gabi::{STT_FILE, STT_SECTION};
 use itertools::Itertools;
 use linked_hash_map::LinkedHashMap;
+use linked_hash_set::LinkedHashSet;
 use parse_int::parse;
 use reedline_repl_rs::{
     clap::{Arg, ArgAction, Command},
@@ -42,7 +43,7 @@ use std::{
 #[derive(Debug)]
 pub struct SymbolTable {
     symbols: HashMap<String, Symbol>,
-    breakpoints: Vec<String>,
+    breakpoints: LinkedHashSet<String>,
 }
 
 pub type SymbolTables = LinkedHashMap<String, SymbolTable>;
@@ -147,7 +148,7 @@ struct EmuConfig<'a> {
 struct EmuState {
     cpu: M68K,
     symbol_tables: SymbolTables,
-    address_breakpoints: Vec<u32>,
+    address_breakpoints: LinkedHashSet<u32>,
 }
 
 fn main() -> Result<(), ReplError> {
@@ -169,7 +170,7 @@ fn main() -> Result<(), ReplError> {
                 table_name.to_string(),
                 SymbolTable {
                     symbols: read_symbol_table(path).unwrap(),
-                    breakpoints: Vec::new(),
+                    breakpoints: LinkedHashSet::new(),
                 },
             );
         }
@@ -177,7 +178,7 @@ fn main() -> Result<(), ReplError> {
     Repl::<_, Error>::new(EmuState {
         cpu: M68K::new(backplane),
         symbol_tables,
-        address_breakpoints: Vec::new(),
+        address_breakpoints: LinkedHashSet::new(),
     })
     .with_name("68KEmu")
     .with_version("0.1.0")
@@ -440,9 +441,9 @@ fn main() -> Result<(), ReplError> {
                         .iter()
                         .cloned()
                         .filter(|sym| symbols.contains_key(sym))
-                        .collect::<Vec<_>>()
+                        .collect::<LinkedHashSet<_>>()
                 } else {
-                    Vec::new()
+                    LinkedHashSet::new()
                 };
                 if !args.get_flag("append") {
                     state.symbol_tables.clear();
@@ -552,7 +553,11 @@ fn parse_location(location: &str, symbol_tables: &SymbolTables) -> Result<Locati
     })
 }
 
-fn breakpoint_set_at(addr: u32, symbol_tables: &SymbolTables, address_breakpoints: &[u32]) -> bool {
+fn breakpoint_set_at(
+    addr: u32,
+    symbol_tables: &SymbolTables,
+    address_breakpoints: &LinkedHashSet<u32>,
+) -> bool {
     address_breakpoints.contains(&addr)
         | symbol_tables.values().any(|table| {
             table
