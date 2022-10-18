@@ -12,6 +12,7 @@ elf = "0.1.0"
 human-repr = { version = "1.0.1", features = ["iec", "space"] }
 inventory = "0.3.1"
 itertools = "0.10.5"
+linked-hash-map = "0.5.6"
 nullable-result = { version = "0.7.0", features=["try_trait"] }
 parse_int = "0.6.0"
 paste = "1.0.9"

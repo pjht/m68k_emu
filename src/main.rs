@@ -22,6 +22,7 @@ use crate::{
 use disas::DisassemblyError;
 use elf::gabi::{STT_FILE, STT_SECTION};
 use itertools::Itertools;
+use linked_hash_map::LinkedHashMap;
 use parse_int::parse;
 use reedline_repl_rs::{
     clap::{Arg, ArgAction, Command},
@@ -38,7 +39,7 @@ use std::{
     process,
 };
 
-pub type SymbolTables = HashMap<String, HashMap<String, Symbol>>;
+pub type SymbolTables = LinkedHashMap<String, HashMap<String, Symbol>>;
 
 #[derive(Copy, Clone, Debug)]
 enum PeekFormat {
@@ -153,7 +154,7 @@ fn main() -> Result<(), ReplError> {
             Err(e) => panic!("{}", e),
         };
     }
-    let mut symbol_tables = HashMap::new();
+    let mut symbol_tables = LinkedHashMap::new();
     if let Some(initial_tables) = config.symbol_tables {
         for path in initial_tables {
             let table_name = Path::new(&path).file_name().unwrap().to_str().unwrap();
