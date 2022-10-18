@@ -292,7 +292,8 @@ fn main() -> Result<(), ReplError> {
     }) {
         for path in initial_tables {
             let path = path.as_str().expect("Symbol table path is not string");
-            load_symbol_table(path, &mut symbol_tables).unwrap();
+            let table_name = Path::new(&path).file_name().unwrap().to_str().unwrap();
+            symbol_tables.insert(table_name.to_string(), read_symbol_table(path).unwrap());
         }
     }
     Repl::<_, Error>::new(EmuState {
@@ -549,7 +550,10 @@ fn main() -> Result<(), ReplError> {
                 if !args.get_flag("append") {
                     state.symbol_tables.clear();
                 }
-                load_symbol_table(file_path, &mut state.symbol_tables)?;
+                let table_name = Path::new(&file_path).file_name().unwrap().to_str().unwrap();
+                state
+                    .symbol_tables
+                    .insert(table_name.to_string(), read_symbol_table(file_path)?);
                 Ok(None)
             } else {
                 let mut out = String::new();
@@ -594,14 +598,14 @@ fn main() -> Result<(), ReplError> {
     .run()
 }
 
-fn load_symbol_table(path: &str, symbol_tables: &mut SymbolTables) -> Result<(), Error> {
+fn read_symbol_table(path: &str) -> Result<HashMap<String, Symbol>, Error> {
     let file =
         elf::File::open_stream(&mut File::open(path)?).map_err(<Box<dyn error::Error>>::from)?;
     let (symtab, symstrtab) = file
         .symbol_table()
         .map_err(<Box<dyn error::Error>>::from)?
         .ok_or(Error::Misc("No symbol table in file"))?;
-    let symbols = symtab
+    Ok(symtab
         .iter()
         .skip(1)
         .filter(|sym| sym.st_symtype().0 != STT_FILE && sym.st_symtype().0 != STT_SECTION)
@@ -611,10 +615,7 @@ fn load_symbol_table(path: &str, symbol_tables: &mut SymbolTables) -> Result<(),
                 Symbol::from(sym),
             )
         })
-        .collect::<HashMap<_, _>>();
-    let basename = Path::new(&path).file_name().unwrap().to_str().unwrap();
-    symbol_tables.insert(basename.to_string(), symbols);
-    Ok(())
+        .collect::<HashMap<_, _>>())
 }
 
 fn disas_fmt(cpu: &mut M68K, addr: u32) -> (String, Result<u32, DisassemblyError<BusError>>) {
