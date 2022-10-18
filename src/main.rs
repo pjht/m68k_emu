@@ -487,6 +487,48 @@ fn main() -> Result<(), ReplError> {
         },
     )
     .with_command(
+        Command::new("bp")
+            .arg(Arg::new("location").help("The location to set a breakpoint at"))
+            .help("Set a breakpoint or list current breakpoints"),
+        |args, state| {
+            if let Some(location) = args.get_one::<String>("location") {
+                let location = parse_location(location, &state.symbol_tables)?;
+                match location {
+                    Location::Symbol((table, symbol)) => state
+                        .symbol_tables
+                        .get_mut(&table)
+                        .unwrap()
+                        .breakpoints
+                        .insert_if_absent(symbol),
+                    Location::Address(address) => {
+                        state.address_breakpoints.insert_if_absent(address)
+                    }
+                };
+                Ok(None)
+            } else {
+                let mut out = String::new();
+                for (table_name, table) in &state.symbol_tables {
+                    if !table.breakpoints.is_empty() {
+                        out += table_name;
+                        out += ":\n";
+                        for breakpoint in &table.breakpoints {
+                            out += breakpoint;
+                            out += "\n";
+                        }
+                    }
+                }
+                if !state.address_breakpoints.is_empty() {
+                    out += "Address breakpoints:\n";
+                    for breakpoint in &state.address_breakpoints {
+                        out += &format!("{}\n", breakpoint);
+                    }
+                }
+                out.pop();
+                Ok(Some(out))
+            }
+        },
+    )
+    .with_command(
         Command::new("quit")
             .visible_alias("q")
             .visible_alias("exit")
