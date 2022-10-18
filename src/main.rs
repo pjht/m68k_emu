@@ -303,7 +303,13 @@ fn main() -> Result<(), ReplError> {
                     .get_one::<String>("stop_addr")
                     .map(|s| parse_location_address(s, &state.symbol_tables))
                     .transpose()?;
-                if stop_addr.map(|a| state.cpu.pc() == a).unwrap_or(false) {
+                if stop_addr.map(|a| state.cpu.pc() == a).unwrap_or(false)
+                    | breakpoint_set_at(
+                        state.cpu.pc(),
+                        &state.symbol_tables,
+                        &state.address_breakpoints,
+                    )
+                {
                     break;
                 }
                 if args.get_flag("print_ins") {
@@ -543,4 +549,15 @@ fn parse_location(location: &str, symbol_tables: &SymbolTables) -> Result<Locati
             symbol_name.to_string(),
         )))
     })
+}
+
+fn breakpoint_set_at(addr: u32, symbol_tables: &SymbolTables, address_breakpoints: &[u32]) -> bool {
+    address_breakpoints.contains(&addr)
+        | symbol_tables.values().any(|table| {
+            table
+                .breakpoints
+                .iter()
+                .map(|sym| table.symbols.get(sym).unwrap())
+                .any(|sym| sym.value() == addr)
+        })
 }
