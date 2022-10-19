@@ -465,7 +465,11 @@ fn main() -> Result<(), ReplError> {
                     }
                 }
                 out.pop(); // Remove trailing newline
-                Ok(Some(out))
+                if out.is_empty() {
+                    Ok(Some("No symbols".to_string()))
+                } else {
+                    Ok(Some(out))
+                }
             }
         },
     )
@@ -523,7 +527,11 @@ fn main() -> Result<(), ReplError> {
                     }
                 }
                 out.pop();
-                Ok(Some(out))
+                if out.is_empty() {
+                    Ok(Some("No breakpoints".to_string()))
+                } else {
+                    Ok(Some(out))
+                }
             }
         },
     )
