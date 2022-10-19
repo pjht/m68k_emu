@@ -492,22 +492,47 @@ fn main() -> Result<(), ReplError> {
     .with_command(
         Command::new("bp")
             .arg(Arg::new("location").help("The location to set a breakpoint at"))
+            .arg(
+                Arg::new("delete")
+                    .long("delete")
+                    .short('d')
+                    .action(ArgAction::SetTrue)
+                    .requires("location")
+                    .help("Delete the breakpoint instead of setting it"),
+            )
             .help("Set a breakpoint or list current breakpoints"),
         |args, state| {
             if let Some(location) = args.get_one::<String>("location") {
                 let location = parse_location(location, &state.symbol_tables)?;
-                match location {
-                    Location::Symbol((table, symbol)) => state
-                        .symbol_tables
-                        .get_mut(&table)
-                        .unwrap()
-                        .breakpoints
-                        .insert_if_absent(symbol),
-                    Location::Address(address) => {
-                        state.address_breakpoints.insert_if_absent(address)
+                if args.get_flag("delete") {
+                    let deleted = match location {
+                        Location::Symbol((table, symbol)) => state
+                            .symbol_tables
+                            .get_mut(&table)
+                            .unwrap()
+                            .breakpoints
+                            .remove(&symbol),
+                        Location::Address(address) => state.address_breakpoints.remove(&address),
+                    };
+                    if deleted {
+                        Ok(None)
+                    } else {
+                        Ok(Some("No such breakpoint".to_string()))
                     }
-                };
-                Ok(None)
+                } else {
+                    match location {
+                        Location::Symbol((table, symbol)) => state
+                            .symbol_tables
+                            .get_mut(&table)
+                            .unwrap()
+                            .breakpoints
+                            .insert_if_absent(symbol),
+                        Location::Address(address) => {
+                            state.address_breakpoints.insert_if_absent(address)
+                        }
+                    };
+                    Ok(None)
+                }
             } else {
                 let mut out = String::new();
                 for (table_name, table) in &state.symbol_tables {
