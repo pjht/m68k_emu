@@ -26,7 +26,7 @@ use linked_hash_map::LinkedHashMap;
 use linked_hash_set::LinkedHashSet;
 use parse_int::parse;
 use reedline_repl_rs::{
-    clap::{Arg, ArgAction, Command},
+    clap::{builder::BoolishValueParser, Arg, ArgAction, Command},
     Error as ReplError, Repl,
 };
 use serde::Deserialize;
@@ -44,6 +44,7 @@ use std::{
 pub struct SymbolTable {
     symbols: HashMap<String, Symbol>,
     breakpoints: LinkedHashSet<String>,
+    active: bool,
 }
 
 pub type SymbolTables = LinkedHashMap<String, SymbolTable>;
@@ -170,6 +171,7 @@ fn main() -> Result<(), ReplError> {
                 SymbolTable {
                     symbols: read_symbol_table(path).unwrap(),
                     breakpoints: LinkedHashSet::new(),
+                    active: true,
                 },
             );
         }
@@ -428,6 +430,7 @@ fn main() -> Result<(), ReplError> {
                     .short('a')
                     .action(ArgAction::SetTrue)
                     .requires("file")
+                    .conflicts_with_all(&["delete", "active"])
                     .help("Append the file's symbols to the loaded list of symbols"),
             )
             .arg(
@@ -436,8 +439,17 @@ fn main() -> Result<(), ReplError> {
                     .short('d')
                     .action(ArgAction::SetTrue)
                     .requires("file")
-                    .conflicts_with("append")
+                    .conflicts_with_all(&["append", "active"])
                     .help("Delete the symbol table instead of loading it"),
+            )
+            .arg(
+                Arg::new("active")
+                    .long("active")
+                    .short('c')
+                    .takes_value(true)
+                    .value_parser(BoolishValueParser::new())
+                    .requires("file")
+                    .conflicts_with_all(&["append", "delete"]),
             )
             .about("Load symbols from an ELF file, or list symbols if no file provided"),
         |args, state| {
@@ -449,18 +461,29 @@ fn main() -> Result<(), ReplError> {
                     } else {
                         Ok(Some("No such symbol table".to_string()))
                     }
+                } else if let Some(&active) = args.get_one::<bool>("active") {
+                    if let Some(table) = state.symbol_tables.get_mut(table_name) {
+                        table.active = active;
+                        Ok(None)
+                    } else {
+                        Ok(Some("No such symbol table".to_string()))
+                    }
                 } else {
                     let symbols = read_symbol_table(file_path)?;
-                    let breakpoints = if let Some(table) = state.symbol_tables.get(table_name) {
-                        table
-                            .breakpoints
-                            .iter()
-                            .cloned()
-                            .filter(|sym| symbols.contains_key(sym))
-                            .collect::<LinkedHashSet<_>>()
-                    } else {
-                        LinkedHashSet::new()
-                    };
+                    let (breakpoints, active) =
+                        if let Some(table) = state.symbol_tables.get(table_name) {
+                            (
+                                table
+                                    .breakpoints
+                                    .iter()
+                                    .cloned()
+                                    .filter(|sym| symbols.contains_key(sym))
+                                    .collect::<LinkedHashSet<_>>(),
+                                table.active,
+                            )
+                        } else {
+                            (LinkedHashSet::new(), true)
+                        };
                     if !args.get_flag("append") {
                         state.symbol_tables.clear();
                     }
@@ -469,6 +492,7 @@ fn main() -> Result<(), ReplError> {
                         SymbolTable {
                             symbols,
                             breakpoints,
+                            active,
                         },
                     );
                     Ok(None)
@@ -476,8 +500,10 @@ fn main() -> Result<(), ReplError> {
             } else {
                 let mut out = String::new();
                 for (table_name, table) in state.symbol_tables.iter() {
-                    out += table_name;
-                    out += "\n";
+                    out += &format!(
+                        "{table_name} ({}): \n",
+                        if table.active { "active" } else { "inactive" }
+                    );
                     for (name, symbol) in table.symbols.iter() {
                         out += &format!("{name}: {symbol}\n");
                     }
@@ -555,8 +581,10 @@ fn main() -> Result<(), ReplError> {
                 let mut out = String::new();
                 for (table_name, table) in &state.symbol_tables {
                     if !table.breakpoints.is_empty() {
-                        out += table_name;
-                        out += ":\n";
+                        out += &format!(
+                            "{table_name} ({}): \n",
+                            if table.active { "active" } else { "inactive" }
+                        );
                         for breakpoint in &table.breakpoints {
                             out += breakpoint;
                             out += "\n";
@@ -651,11 +679,12 @@ fn breakpoint_set_at(
     address_breakpoints: &LinkedHashSet<u32>,
 ) -> bool {
     address_breakpoints.contains(&addr)
-        | symbol_tables.values().any(|table| {
-            table
-                .breakpoints
-                .iter()
-                .map(|sym| &table.symbols[sym])
-                .any(|sym| sym.value() == addr)
+        || symbol_tables.values().any(|table| {
+            table.active
+                && table
+                    .breakpoints
+                    .iter()
+                    .map(|sym| &table.symbols[sym])
+                    .any(|sym| sym.value() == addr)
         })
 }
