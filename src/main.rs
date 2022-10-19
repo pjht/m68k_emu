@@ -430,32 +430,49 @@ fn main() -> Result<(), ReplError> {
                     .requires("file")
                     .help("Append the file's symbols to the loaded list of symbols"),
             )
+            .arg(
+                Arg::new("delete")
+                    .long("delete")
+                    .short('d')
+                    .action(ArgAction::SetTrue)
+                    .requires("file")
+                    .conflicts_with("append")
+                    .help("Delete the symbol table instead of loading it"),
+            )
             .about("Load symbols from an ELF file, or list symbols if no file provided"),
         |args, state| {
             if let Some(file_path) = args.get_one::<String>("file") {
                 let table_name = Path::new(&file_path).file_name().unwrap().to_str().unwrap();
-                let symbols = read_symbol_table(file_path)?;
-                let breakpoints = if let Some(table) = state.symbol_tables.get(table_name) {
-                    table
-                        .breakpoints
-                        .iter()
-                        .cloned()
-                        .filter(|sym| symbols.contains_key(sym))
-                        .collect::<LinkedHashSet<_>>()
+                if args.get_flag("delete") {
+                    if state.symbol_tables.remove(table_name).is_some() {
+                        Ok(None)
+                    } else {
+                        Ok(Some("No such symbol table".to_string()))
+                    }
                 } else {
-                    LinkedHashSet::new()
-                };
-                if !args.get_flag("append") {
-                    state.symbol_tables.clear();
+                    let symbols = read_symbol_table(file_path)?;
+                    let breakpoints = if let Some(table) = state.symbol_tables.get(table_name) {
+                        table
+                            .breakpoints
+                            .iter()
+                            .cloned()
+                            .filter(|sym| symbols.contains_key(sym))
+                            .collect::<LinkedHashSet<_>>()
+                    } else {
+                        LinkedHashSet::new()
+                    };
+                    if !args.get_flag("append") {
+                        state.symbol_tables.clear();
+                    }
+                    state.symbol_tables.insert(
+                        table_name.to_string(),
+                        SymbolTable {
+                            symbols,
+                            breakpoints,
+                        },
+                    );
+                    Ok(None)
                 }
-                state.symbol_tables.insert(
-                    table_name.to_string(),
-                    SymbolTable {
-                        symbols,
-                        breakpoints,
-                    },
-                );
-                Ok(None)
             } else {
                 let mut out = String::new();
                 for (table_name, table) in state.symbol_tables.iter() {
