@@ -427,6 +427,7 @@ fn main() -> Result<(), ReplError> {
                     .long("append")
                     .short('a')
                     .action(ArgAction::SetTrue)
+                    .requires("file")
                     .help("Append the file's symbols to the loaded list of symbols"),
             )
             .about("Load symbols from an ELF file, or list symbols if no file provided"),
