@@ -604,7 +604,7 @@ fn breakpoint_set_at(
             table
                 .breakpoints
                 .iter()
-                .map(|sym| table.symbols.get(sym).unwrap())
+                .map(|sym| &table.symbols[sym])
                 .any(|sym| sym.value() == addr)
         })
 }

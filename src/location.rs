@@ -11,13 +11,7 @@ pub enum Location {
 impl Location {
     pub fn addr(&self, symbol_tables: &SymbolTables) -> u32 {
         match self {
-            Self::Symbol((table, sym)) => symbol_tables
-                .get(table)
-                .unwrap()
-                .symbols
-                .get(sym)
-                .unwrap()
-                .value(),
+            Self::Symbol((table, sym)) => symbol_tables[table].symbols[sym].value(),
             Self::Address(addr) => *addr,
         }
     }
