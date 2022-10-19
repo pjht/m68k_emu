@@ -271,7 +271,7 @@ fn main() -> Result<(), ReplError> {
                 }
                 if args.get_flag("print_ins") {
                     let pc = state.cpu.pc();
-                    out += &disas_fmt(&mut state.cpu, pc).0;
+                    out += &disas_fmt(&mut state.cpu, pc, &state.symbol_tables).0;
                 }
                 state.cpu.step();
             }
@@ -317,13 +317,13 @@ fn main() -> Result<(), ReplError> {
                 }
                 if args.get_flag("print_ins") {
                     let pc = state.cpu.pc();
-                    out += &disas_fmt(&mut state.cpu, pc).0;
+                    out += &disas_fmt(&mut state.cpu, pc, &state.symbol_tables).0;
                 }
                 state.cpu.step();
             }
             out += &format!("{}\n", state.cpu);
             let pc = state.cpu.pc();
-            out += &disas_fmt(&mut state.cpu, pc).0;
+            out += &disas_fmt(&mut state.cpu, pc, &state.symbol_tables).0;
             out.pop(); // Remove trailing newline
             Ok(Some(out))
         },
@@ -406,7 +406,7 @@ fn main() -> Result<(), ReplError> {
             let count = parse::<u32>(args.get_one::<String>("count").map_or("1", String::as_str))?;
             let mut out = String::new();
             for _ in 0..count {
-                let (fmt, res) = disas_fmt(&mut state.cpu, addr);
+                let (fmt, res) = disas_fmt(&mut state.cpu, addr, &state.symbol_tables);
                 out += &fmt;
                 match res {
                     Ok(new_addr) => {
@@ -638,10 +638,19 @@ fn read_symbol_table(path: &str) -> Result<HashMap<String, Symbol>, Error> {
         .collect::<HashMap<_, _>>())
 }
 
-fn disas_fmt(cpu: &mut M68K, addr: u32) -> (String, Result<u32, DisassemblyError<BusError>>) {
+fn disas_fmt(
+    cpu: &mut M68K,
+    addr: u32,
+    symbol_tables: &SymbolTables,
+) -> (String, Result<u32, DisassemblyError<BusError>>) {
+    let addr_fmt = if let Some((table, symbol, offset)) = address_to_symbol(addr, symbol_tables) {
+        format!("{}:{} + {} (0x{:x})", table, symbol, offset, addr)
+    } else {
+        format!("0x{:x}", addr)
+    };
     match cpu.disassemble(addr) {
-        Ok((ins, new_addr)) => (format!("0x{:x}: {}\n", addr, ins), Ok(new_addr)),
-        Err(e) => (format!("0x{:x}: {}\n", addr, e), Err(e)),
+        Ok((ins, new_addr)) => (format!("{}: {}\n", addr_fmt, ins), Ok(new_addr)),
+        Err(e) => (format!("{}: {}\n", addr_fmt, e), Err(e)),
     }
 }
 
@@ -687,4 +696,30 @@ fn breakpoint_set_at(
                     .map(|sym| &table.symbols[sym])
                     .any(|sym| sym.value() == addr)
         })
+}
+
+fn address_to_symbol(addr: u32, symbol_tables: &SymbolTables) -> Option<(&String, &String, u32)> {
+    symbol_tables.iter().find_map(|(table_name, table)| {
+        if !table.active {
+            None
+        } else {
+            table
+                .symbols
+                .iter()
+                .filter(|(_, sym)| sym.value() <= addr)
+                .map(|(sym_name, sym)| (sym_name, sym, addr - sym.value()))
+                .fold(None, |acc, (sym_name, _, offset)| {
+                    if let Some((_, min_offset)) = acc {
+                        if offset < min_offset {
+                            Some((sym_name, offset))
+                        } else {
+                            acc
+                        }
+                    } else {
+                        Some((sym_name, offset))
+                    }
+                })
+                .map(|(sym_name, offset)| (table_name, sym_name, offset))
+        }
+    })
 }

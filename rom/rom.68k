@@ -40,6 +40,8 @@ ramcode:
   stop #0x2700 
 ramcode_end:
 
+nop | Padding to make sure ramcode_end and find_first_card are different
+
 | Finds the first card with the type in d0.b, and returns it's IO base address in a0, or 0 if not found
 | Clobbers d1
 find_first_card:
