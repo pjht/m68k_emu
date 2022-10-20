@@ -706,18 +706,8 @@ fn address_to_symbol(addr: u32, symbol_tables: &SymbolTables) -> Option<(&String
                 .symbols
                 .iter()
                 .filter(|(_, sym)| sym.value() <= addr)
-                .map(|(sym_name, sym)| (sym_name, sym, addr - sym.value()))
-                .fold(None, |acc, (sym_name, _, offset)| {
-                    if let Some((_, min_offset)) = acc {
-                        if offset < min_offset {
-                            Some((sym_name, offset))
-                        } else {
-                            acc
-                        }
-                    } else {
-                        Some((sym_name, offset))
-                    }
-                })
+                .map(|(sym_name, sym)| (sym_name, addr - sym.value()))
+                .min_by_key(|(_, offset)| *offset)
                 .map(|(sym_name, offset)| (table_name, sym_name, offset))
         }
     })
