@@ -46,6 +46,26 @@ pub struct SymbolTable {
     active: bool,
 }
 
+impl SymbolTable {
+    fn new(symbols: HashMap<String, Symbol>) -> Self {
+        Self {
+            symbols,
+            breakpoints: IndexSet::new(),
+            active: true,
+        }
+    }
+
+    fn update_symbols(&mut self, symbols: HashMap<String, Symbol>) {
+        self.breakpoints = self
+            .breakpoints
+            .iter()
+            .cloned()
+            .filter(|sym| symbols.contains_key(sym))
+            .collect::<IndexSet<_>>();
+        self.symbols = symbols;
+    }
+}
+
 pub type SymbolTables = IndexMap<String, SymbolTable>;
 
 #[derive(Copy, Clone, Debug)]
@@ -167,11 +187,7 @@ fn main() -> Result<(), ReplError> {
             let table_name = Path::new(&path).file_name().unwrap().to_str().unwrap();
             symbol_tables.insert(
                 table_name.to_string(),
-                SymbolTable {
-                    symbols: read_symbol_table(path).unwrap(),
-                    breakpoints: IndexSet::new(),
-                    active: true,
-                },
+                SymbolTable::new(read_symbol_table(path).unwrap()),
             );
         }
     }
@@ -469,31 +485,18 @@ fn main() -> Result<(), ReplError> {
                     }
                 } else {
                     let symbols = read_symbol_table(file_path)?;
-                    let (breakpoints, active) =
-                        if let Some(table) = state.symbol_tables.get(table_name) {
-                            (
-                                table
-                                    .breakpoints
-                                    .iter()
-                                    .cloned()
-                                    .filter(|sym| symbols.contains_key(sym))
-                                    .collect::<IndexSet<_>>(),
-                                table.active,
-                            )
-                        } else {
-                            (IndexSet::new(), true)
-                        };
+                    if let Some(table) = state.symbol_tables.get_mut(table_name) {
+                        table.update_symbols(symbols);
+                    } else {
+                        state
+                            .symbol_tables
+                            .insert(table_name.to_string(), SymbolTable::new(symbols));
+                    };
                     if !args.get_flag("append") {
+                        let table = state.symbol_tables.remove(table_name).unwrap();
                         state.symbol_tables.clear();
-                    }
-                    state.symbol_tables.insert(
-                        table_name.to_string(),
-                        SymbolTable {
-                            symbols,
-                            breakpoints,
-                            active,
-                        },
-                    );
+                        state.symbol_tables.insert(table_name.to_string(), table);
+                    };
                     Ok(None)
                 }
             } else {
