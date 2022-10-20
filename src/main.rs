@@ -11,6 +11,7 @@ mod ram;
 mod rom;
 mod storage;
 mod symbol;
+mod symbol_table;
 mod term;
 use crate::{
     backplane::Backplane,
@@ -38,33 +39,7 @@ use std::{
     path::Path,
     process,
 };
-
-#[derive(Debug)]
-pub struct SymbolTable {
-    symbols: HashMap<String, Symbol>,
-    breakpoints: IndexSet<String>,
-    active: bool,
-}
-
-impl SymbolTable {
-    fn new(symbols: HashMap<String, Symbol>) -> Self {
-        Self {
-            symbols,
-            breakpoints: IndexSet::new(),
-            active: true,
-        }
-    }
-
-    fn update_symbols(&mut self, symbols: HashMap<String, Symbol>) {
-        self.breakpoints = self
-            .breakpoints
-            .iter()
-            .cloned()
-            .filter(|sym| symbols.contains_key(sym))
-            .collect::<IndexSet<_>>();
-        self.symbols = symbols;
-    }
-}
+use symbol_table::SymbolTable;
 
 pub type SymbolTables = IndexMap<String, SymbolTable>;
 
