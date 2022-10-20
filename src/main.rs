@@ -21,9 +21,8 @@ use crate::{
 };
 use disas::DisassemblyError;
 use elf::gabi::{STT_FILE, STT_SECTION};
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
-use linked_hash_map::LinkedHashMap;
-use linked_hash_set::LinkedHashSet;
 use parse_int::parse;
 use reedline_repl_rs::{
     clap::{builder::BoolishValueParser, Arg, ArgAction, Command},
@@ -43,11 +42,11 @@ use std::{
 #[derive(Debug)]
 pub struct SymbolTable {
     symbols: HashMap<String, Symbol>,
-    breakpoints: LinkedHashSet<String>,
+    breakpoints: IndexSet<String>,
     active: bool,
 }
 
-pub type SymbolTables = LinkedHashMap<String, SymbolTable>;
+pub type SymbolTables = IndexMap<String, SymbolTable>;
 
 #[derive(Copy, Clone, Debug)]
 enum PeekFormat {
@@ -149,7 +148,7 @@ struct EmuConfig<'a> {
 struct EmuState {
     cpu: M68K,
     symbol_tables: SymbolTables,
-    address_breakpoints: LinkedHashSet<u32>,
+    address_breakpoints: IndexSet<u32>,
 }
 
 fn main() -> Result<(), ReplError> {
@@ -162,7 +161,7 @@ fn main() -> Result<(), ReplError> {
             Err(e) => panic!("{}", e),
         };
     }
-    let mut symbol_tables = LinkedHashMap::new();
+    let mut symbol_tables = IndexMap::new();
     if let Some(initial_tables) = config.symbol_tables {
         for path in initial_tables {
             let table_name = Path::new(&path).file_name().unwrap().to_str().unwrap();
@@ -170,7 +169,7 @@ fn main() -> Result<(), ReplError> {
                 table_name.to_string(),
                 SymbolTable {
                     symbols: read_symbol_table(path).unwrap(),
-                    breakpoints: LinkedHashSet::new(),
+                    breakpoints: IndexSet::new(),
                     active: true,
                 },
             );
@@ -179,7 +178,7 @@ fn main() -> Result<(), ReplError> {
     Repl::<_, Error>::new(EmuState {
         cpu: M68K::new(backplane),
         symbol_tables,
-        address_breakpoints: LinkedHashSet::new(),
+        address_breakpoints: IndexSet::new(),
     })
     .with_name("68KEmu")
     .with_version("0.1.0")
@@ -456,7 +455,7 @@ fn main() -> Result<(), ReplError> {
             if let Some(file_path) = args.get_one::<String>("file") {
                 let table_name = Path::new(&file_path).file_name().unwrap().to_str().unwrap();
                 if args.get_flag("delete") {
-                    if state.symbol_tables.remove(table_name).is_some() {
+                    if state.symbol_tables.shift_remove(table_name).is_some() {
                         Ok(None)
                     } else {
                         Ok(Some("No such symbol table".to_string()))
@@ -478,11 +477,11 @@ fn main() -> Result<(), ReplError> {
                                     .iter()
                                     .cloned()
                                     .filter(|sym| symbols.contains_key(sym))
-                                    .collect::<LinkedHashSet<_>>(),
+                                    .collect::<IndexSet<_>>(),
                                 table.active,
                             )
                         } else {
-                            (LinkedHashSet::new(), true)
+                            (IndexSet::new(), true)
                         };
                     if !args.get_flag("append") {
                         state.symbol_tables.clear();
@@ -555,8 +554,10 @@ fn main() -> Result<(), ReplError> {
                             .get_mut(&table)
                             .unwrap()
                             .breakpoints
-                            .remove(&symbol),
-                        Location::Address(address) => state.address_breakpoints.remove(&address),
+                            .shift_remove(&symbol),
+                        Location::Address(address) => {
+                            state.address_breakpoints.shift_remove(&address)
+                        }
                     };
                     if deleted {
                         Ok(None)
@@ -570,10 +571,8 @@ fn main() -> Result<(), ReplError> {
                             .get_mut(&table)
                             .unwrap()
                             .breakpoints
-                            .insert_if_absent(symbol),
-                        Location::Address(address) => {
-                            state.address_breakpoints.insert_if_absent(address)
-                        }
+                            .insert(symbol),
+                        Location::Address(address) => state.address_breakpoints.insert(address),
                     };
                     Ok(None)
                 }
@@ -685,7 +684,7 @@ fn parse_location(location: &str, symbol_tables: &SymbolTables) -> Result<Locati
 fn breakpoint_set_at(
     addr: u32,
     symbol_tables: &SymbolTables,
-    address_breakpoints: &LinkedHashSet<u32>,
+    address_breakpoints: &IndexSet<u32>,
 ) -> bool {
     address_breakpoints.contains(&addr)
         || symbol_tables.values().any(|table| {
