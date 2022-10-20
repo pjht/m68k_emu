@@ -429,16 +429,14 @@ fn main() -> Result<(), ReplError> {
                 let table_name = Path::new(&file_path).file_name().unwrap().to_str().unwrap();
                 if args.get_flag("delete") {
                     state.symbol_tables.delete(table_name)?;
-                    Ok(None)
                 } else if let Some(&active) = args.get_one::<bool>("active") {
                     state.symbol_tables.set_active(table_name, active)?;
-                    Ok(None)
                 } else {
                     state
                         .symbol_tables
                         .load_table(file_path, args.get_flag("append"))?;
-                    Ok(None)
                 }
+                Ok(None)
             } else if state.symbol_tables.is_empty() {
                 Ok(Some("No symbols".to_string()))
             } else {
