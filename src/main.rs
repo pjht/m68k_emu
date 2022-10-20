@@ -12,17 +12,16 @@ mod rom;
 mod storage;
 mod symbol;
 mod symbol_table;
+mod symbol_tables;
 mod term;
 use crate::{
     backplane::Backplane,
     error::Error,
     location::Location,
     m68k::{BusError, M68K},
-    symbol::Symbol,
 };
 use disas::DisassemblyError;
-use elf::gabi::{STT_FILE, STT_SECTION};
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexSet;
 use itertools::Itertools;
 use parse_int::parse;
 use reedline_repl_rs::{
@@ -31,17 +30,8 @@ use reedline_repl_rs::{
 };
 use serde::Deserialize;
 use serde_yaml::Mapping;
-use std::{
-    collections::HashMap,
-    convert::TryFrom,
-    error::Error as StdError,
-    fs::{self, File},
-    path::Path,
-    process,
-};
-use symbol_table::SymbolTable;
-
-pub type SymbolTables = IndexMap<String, SymbolTable>;
+use std::{convert::TryFrom, fs, path::Path, process};
+use symbol_tables::SymbolTables;
 
 #[derive(Copy, Clone, Debug)]
 enum PeekFormat {
@@ -156,14 +146,10 @@ fn main() -> Result<(), ReplError> {
             Err(e) => panic!("{}", e),
         };
     }
-    let mut symbol_tables = IndexMap::new();
+    let mut symbol_tables = SymbolTables::new();
     if let Some(initial_tables) = config.symbol_tables {
         for path in initial_tables {
-            let table_name = Path::new(&path).file_name().unwrap().to_str().unwrap();
-            symbol_tables.insert(
-                table_name.to_string(),
-                SymbolTable::new(read_symbol_table(path).unwrap()),
-            );
+            symbol_tables.load_table(path, true).unwrap();
         }
     }
     Repl::<_, Error>::new(EmuState {
@@ -294,14 +280,11 @@ fn main() -> Result<(), ReplError> {
             while !state.cpu.stopped {
                 let stop_addr = args
                     .get_one::<String>("stop_addr")
-                    .map(|s| parse_location_address(s, &state.symbol_tables))
+                    .map(|s| state.symbol_tables.parse_location_address(s))
                     .transpose()?;
                 if stop_addr.map(|a| state.cpu.pc() == a).unwrap_or(false)
-                    | breakpoint_set_at(
-                        state.cpu.pc(),
-                        &state.symbol_tables,
-                        &state.address_breakpoints,
-                    )
+                    || state.symbol_tables.breakpoint_set_at(state.cpu.pc())
+                    || state.address_breakpoints.contains(&state.cpu.pc())
                 {
                     break;
                 }
@@ -342,10 +325,9 @@ fn main() -> Result<(), ReplError> {
             let fmt = PeekFormat::try_from(fmt_str.chars().next().unwrap())?;
             let size = PeekSize::try_from(fmt_str.chars().nth(1).unwrap())?;
             let count = parse::<u32>(args.get_one::<String>("count").map_or("1", String::as_str))?;
-            let addr = parse_location_address(
-                args.get_one::<String>("addr").unwrap(),
-                &state.symbol_tables,
-            )?;
+            let addr = state
+                .symbol_tables
+                .parse_location_address(args.get_one::<String>("addr").unwrap())?;
             let mut data = Vec::new();
             let bus = state.cpu.bus_mut();
             for i in 0..count {
@@ -391,7 +373,7 @@ fn main() -> Result<(), ReplError> {
             let mut addr = args
                 .get_one::<String>("addr")
                 .map_or(Ok(state.cpu.pc()), |s| {
-                    parse_location_address(s, &state.symbol_tables)
+                    state.symbol_tables.parse_location_address(s)
                 })?;
             let count = parse::<u32>(args.get_one::<String>("count").map_or("1", String::as_str))?;
             let mut out = String::new();
@@ -446,51 +428,21 @@ fn main() -> Result<(), ReplError> {
             if let Some(file_path) = args.get_one::<String>("file") {
                 let table_name = Path::new(&file_path).file_name().unwrap().to_str().unwrap();
                 if args.get_flag("delete") {
-                    if state.symbol_tables.shift_remove(table_name).is_some() {
-                        Ok(None)
-                    } else {
-                        Ok(Some("No such symbol table".to_string()))
-                    }
+                    state.symbol_tables.delete(table_name)?;
+                    Ok(None)
                 } else if let Some(&active) = args.get_one::<bool>("active") {
-                    if let Some(table) = state.symbol_tables.get_mut(table_name) {
-                        table.active = active;
-                        Ok(None)
-                    } else {
-                        Ok(Some("No such symbol table".to_string()))
-                    }
+                    state.symbol_tables.set_active(table_name, active)?;
+                    Ok(None)
                 } else {
-                    let symbols = read_symbol_table(file_path)?;
-                    if let Some(table) = state.symbol_tables.get_mut(table_name) {
-                        table.update_symbols(symbols);
-                    } else {
-                        state
-                            .symbol_tables
-                            .insert(table_name.to_string(), SymbolTable::new(symbols));
-                    };
-                    if !args.get_flag("append") {
-                        let table = state.symbol_tables.remove(table_name).unwrap();
-                        state.symbol_tables.clear();
-                        state.symbol_tables.insert(table_name.to_string(), table);
-                    };
+                    state
+                        .symbol_tables
+                        .load_table(file_path, args.get_flag("append"))?;
                     Ok(None)
                 }
+            } else if state.symbol_tables.is_empty() {
+                Ok(Some("No symbols".to_string()))
             } else {
-                let mut out = String::new();
-                for (table_name, table) in state.symbol_tables.iter() {
-                    out += &format!(
-                        "{table_name} ({}): \n",
-                        if table.active { "active" } else { "inactive" }
-                    );
-                    for (name, symbol) in table.symbols.iter() {
-                        out += &format!("{name}: {symbol}\n");
-                    }
-                }
-                out.pop(); // Remove trailing newline
-                if out.is_empty() {
-                    Ok(Some("No symbols".to_string()))
-                } else {
-                    Ok(Some(out))
-                }
+                Ok(Some(format!("{}", state.symbol_tables.symbol_displayer())))
             }
         },
     )
@@ -506,7 +458,10 @@ fn main() -> Result<(), ReplError> {
             let location = args.get_one::<String>("location").unwrap();
             Ok(Some(format!(
                 "{}",
-                parse_location(location, &state.symbol_tables)?.displayer(&state.symbol_tables)
+                state
+                    .symbol_tables
+                    .parse_location(location)?
+                    .displayer(&state.symbol_tables)
             )))
         },
     )
@@ -524,15 +479,12 @@ fn main() -> Result<(), ReplError> {
             .help("Set a breakpoint or list current breakpoints"),
         |args, state| {
             if let Some(location) = args.get_one::<String>("location") {
-                let location = parse_location(location, &state.symbol_tables)?;
+                let location = state.symbol_tables.parse_location(location)?;
                 if args.get_flag("delete") {
                     let deleted = match location {
-                        Location::Symbol((table, symbol)) => state
-                            .symbol_tables
-                            .get_mut(&table)
-                            .unwrap()
-                            .breakpoints
-                            .shift_remove(&symbol),
+                        Location::Symbol((table, symbol)) => {
+                            state.symbol_tables.delete_breakpoint(&table, &symbol)?
+                        }
                         Location::Address(address) => {
                             state.address_breakpoints.shift_remove(&address)
                         }
@@ -544,31 +496,22 @@ fn main() -> Result<(), ReplError> {
                     }
                 } else {
                     match location {
-                        Location::Symbol((table, symbol)) => state
-                            .symbol_tables
-                            .get_mut(&table)
-                            .unwrap()
-                            .breakpoints
-                            .insert(symbol),
-                        Location::Address(address) => state.address_breakpoints.insert(address),
+                        Location::Symbol((table, symbol)) => {
+                            state.symbol_tables.set_breakpoint(&table, symbol)?;
+                        }
+                        Location::Address(address) => {
+                            state.address_breakpoints.insert(address);
+                        }
                     };
                     Ok(None)
                 }
             } else {
                 let mut out = String::new();
-                for (table_name, table) in &state.symbol_tables {
-                    if !table.breakpoints.is_empty() {
-                        out += &format!(
-                            "{table_name} ({}): \n",
-                            if table.active { "active" } else { "inactive" }
-                        );
-                        for breakpoint in &table.breakpoints {
-                            out += breakpoint;
-                            out += "\n";
-                        }
-                    }
-                }
+                out += &format!("{}", state.symbol_tables.breakpoint_displayer());
                 if !state.address_breakpoints.is_empty() {
+                    if !out.is_empty() {
+                        out += "\n";
+                    }
                     out += "Address breakpoints:\n";
                     for breakpoint in &state.address_breakpoints {
                         out += &format!("{}\n", breakpoint);
@@ -596,31 +539,12 @@ fn main() -> Result<(), ReplError> {
     .run()
 }
 
-fn read_symbol_table(path: &str) -> Result<HashMap<String, Symbol>, Error> {
-    let file = elf::File::open_stream(&mut File::open(path)?).map_err(<Box<dyn StdError>>::from)?;
-    let (symtab, symstrtab) = file
-        .symbol_table()
-        .map_err(<Box<dyn StdError>>::from)?
-        .ok_or(Error::Misc("No symbol table in file"))?;
-    Ok(symtab
-        .iter()
-        .skip(1)
-        .filter(|sym| sym.st_symtype().0 != STT_FILE && sym.st_symtype().0 != STT_SECTION)
-        .map(|sym| {
-            (
-                symstrtab.get(sym.st_name as usize).unwrap().to_string(),
-                Symbol::from(sym),
-            )
-        })
-        .collect::<HashMap<_, _>>())
-}
-
 fn disas_fmt(
     cpu: &mut M68K,
     addr: u32,
     symbol_tables: &SymbolTables,
 ) -> (String, Result<u32, DisassemblyError<BusError>>) {
-    let addr_fmt = if let Some((table, symbol, offset)) = address_to_symbol(addr, symbol_tables) {
+    let addr_fmt = if let Some((table, symbol, offset)) = symbol_tables.address_to_symbol(addr) {
         format!("{}:{} + {} (0x{:x})", table, symbol, offset, addr)
     } else {
         format!("0x{:x}", addr)
@@ -629,64 +553,4 @@ fn disas_fmt(
         Ok((ins, new_addr)) => (format!("{}: {}\n", addr_fmt, ins), Ok(new_addr)),
         Err(e) => (format!("{}: {}\n", addr_fmt, e), Err(e)),
     }
-}
-
-fn parse_location_address(location: &str, symbol_tables: &SymbolTables) -> Result<u32, Error> {
-    parse_location(location, symbol_tables).map(|l| l.addr(symbol_tables))
-}
-
-fn parse_location(location: &str, symbol_tables: &SymbolTables) -> Result<Location, Error> {
-    parse::<u32>(location).map(Location::Address).or_else(|_| {
-        let (mut table_name, symbol_name) = location.split_once(':').unwrap_or(("", location));
-        if table_name.is_empty() {
-            table_name = symbol_tables
-                .iter()
-                .find(|(_, table)| table.symbols.contains_key(symbol_name))
-                .ok_or(Error::InvalidSymbolName)?
-                .0;
-        } else if !symbol_tables
-            .get(table_name)
-            .ok_or(Error::InvalidSymbolTable)?
-            .symbols
-            .contains_key(symbol_name)
-        {
-            return Err(Error::InvalidSymbolName);
-        }
-        Ok(Location::Symbol((
-            table_name.to_string(),
-            symbol_name.to_string(),
-        )))
-    })
-}
-
-fn breakpoint_set_at(
-    addr: u32,
-    symbol_tables: &SymbolTables,
-    address_breakpoints: &IndexSet<u32>,
-) -> bool {
-    address_breakpoints.contains(&addr)
-        || symbol_tables.values().any(|table| {
-            table.active
-                && table
-                    .breakpoints
-                    .iter()
-                    .map(|sym| &table.symbols[sym])
-                    .any(|sym| sym.value() == addr)
-        })
-}
-
-fn address_to_symbol(addr: u32, symbol_tables: &SymbolTables) -> Option<(&String, &String, u32)> {
-    symbol_tables.iter().find_map(|(table_name, table)| {
-        if !table.active {
-            None
-        } else {
-            table
-                .symbols
-                .iter()
-                .filter(|(_, sym)| sym.value() <= addr)
-                .map(|(sym_name, sym)| (sym_name, addr - sym.value()))
-                .min_by_key(|(_, offset)| *offset)
-                .map(|(sym_name, offset)| (table_name, sym_name, offset))
-        }
-    })
 }
