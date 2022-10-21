@@ -511,11 +511,8 @@ fn main() -> Result<(), ReplError> {
                         out += "\n";
                     }
                     out += "Address breakpoints:\n";
-                    for breakpoint in &state.address_breakpoints {
-                        out += &format!("{}\n", breakpoint);
-                    }
+                    out += &format!("{}", state.address_breakpoints.iter().format("\n"));
                 }
-                out.pop();
                 if out.is_empty() {
                     Ok(Some("No breakpoints".to_string()))
                 } else {

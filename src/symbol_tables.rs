@@ -2,27 +2,28 @@ use std::{fmt::Display, path::Path};
 
 use crate::{error::Error, location::Location, symbol::Symbol, symbol_table::SymbolTable};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use parse_int::parse;
 
 pub struct SymbolDisplayer<'a>(&'a SymbolTables);
 
 impl Display for SymbolDisplayer<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut first_table = true;
-        for (table_name, table) in self.0.tables.iter() {
-            if !first_table {
-                f.write_str("\n")?;
-            }
-            f.write_fmt(format_args!(
-                "{table_name} ({}):",
-                if table.active { "active" } else { "inactive" }
-            ))?;
-            for (name, symbol) in table.symbols.iter() {
-                f.write_fmt(format_args!("\n{name}: {symbol}"))?;
-            }
-            first_table = false;
-        }
-        Ok(())
+        f.write_fmt(format_args!(
+            "{}",
+            self.0
+                .tables
+                .iter()
+                .format_with("\n", |(table_name, table), f| {
+                    f(&format_args!(
+                        "{table_name} ({}):\n{}",
+                        if table.active { "active" } else { "inactive" },
+                        table.symbols.iter().format_with("\n", |(name, symbol), g| {
+                            g(&format_args!("{name}: {symbol}"))
+                        }),
+                    ))
+                })
+        ))
     }
 }
 
@@ -30,24 +31,23 @@ pub struct BreakpointDisplayer<'a>(&'a SymbolTables);
 
 impl Display for BreakpointDisplayer<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut first_table = true;
-        for (table_name, table) in self.0.tables.iter() {
-            if !first_table {
-                f.write_str("\n")?;
-            }
-            if table.breakpoints.is_empty() {
-                continue;
-            }
-            f.write_fmt(format_args!(
-                "{table_name} ({}):",
-                if table.active { "active" } else { "inactive" }
-            ))?;
-            for breakpoint in &table.breakpoints {
-                f.write_fmt(format_args!("\n{breakpoint}"))?;
-            }
-            first_table = false;
-        }
-        Ok(())
+        f.write_fmt(format_args!(
+            "{}",
+            self.0
+                .tables
+                .iter()
+                .format_with("\n", |(table_name, table), f| {
+                    if !table.breakpoints.is_empty() {
+                        f(&format_args!(
+                            "{table_name} ({}):\n{}",
+                            if table.active { "active" } else { "inactive" },
+                            table.breakpoints.iter().format("\n")
+                        ))
+                    } else {
+                        Ok(())
+                    }
+                })
+        ))
     }
 }
 
