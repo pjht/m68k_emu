@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 bitvec = "1.0.0"
 derive-try-from-primitive = "1.0.0"
-elf = "0.1.0" 
+elf = "0.3.1" 
 human-repr = { version = "1.0.1", features = ["iec", "space"] }
 indexmap = "1.9.1"
 inventory = "0.3.1"

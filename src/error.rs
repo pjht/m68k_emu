@@ -11,21 +11,21 @@ pub enum Error {
     InvalidPeekSize,
     Disassembly(DisassemblyError<BusError>),
     Misc(&'static str),
-    MiscDyn(Box<dyn error::Error>),
     InvalidSymbolTable,
     InvalidSymbolName,
     Io(io::Error),
+    ElfParse(elf::ParseError),
+}
+
+impl From<elf::ParseError> for Error {
+    fn from(v: elf::ParseError) -> Self {
+        Self::ElfParse(v)
+    }
 }
 
 impl From<io::Error> for Error {
     fn from(v: io::Error) -> Self {
         Self::Io(v)
-    }
-}
-
-impl From<Box<dyn error::Error>> for Error {
-    fn from(v: Box<dyn error::Error>) -> Self {
-        Self::MiscDyn(v)
     }
 }
 
@@ -63,10 +63,10 @@ impl Display for Error {
             Self::InvalidPeekSize => f.write_str("Invalid peek size"),
             Self::Disassembly(e) => e.fmt(f),
             Self::Misc(s) => f.write_str(s),
-            Self::MiscDyn(e) => e.fmt(f),
             Self::InvalidSymbolTable => f.write_str("Invalid symbol table"),
             Self::InvalidSymbolName => f.write_str("Invalid symbol name"),
             Self::Io(e) => e.fmt(f),
+            Self::ElfParse(e) => e.fmt(f),
         }
     }
 }

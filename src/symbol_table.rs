@@ -1,8 +1,8 @@
 use crate::{error::Error, symbol::Symbol};
 use elf::gabi::{STT_FILE, STT_SECTION};
+use elf::CachedReadBytes;
 use indexmap::IndexSet;
 use std::collections::HashMap;
-use std::error::Error as StdError;
 use std::fs::File;
 
 #[derive(Debug)]
@@ -22,11 +22,10 @@ impl SymbolTable {
     }
 
     pub fn read_from_file(path: &str) -> Result<Self, Error> {
-        let file =
-            elf::File::open_stream(&mut File::open(path)?).map_err(<Box<dyn StdError>>::from)?;
+        let mut cached_reader = CachedReadBytes::new(File::open(path)?);
+        let mut file = elf::File::open_stream(&mut cached_reader)?;
         let (symtab, symstrtab) = file
-            .symbol_table()
-            .map_err(<Box<dyn StdError>>::from)?
+            .symbol_table()?
             .ok_or(Error::Misc("No symbol table in file"))?;
         let symbols = symtab
             .iter()
