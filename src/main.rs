@@ -197,7 +197,6 @@ fn main() -> Result<(), ReplError> {
     .with_command(
         Command::new("ls").about("List the cards in the system"),
         |_, state| {
-            #[allow(unstable_name_collisions)]
             Ok(Some(
                 state
                     .cpu
@@ -206,8 +205,7 @@ fn main() -> Result<(), ReplError> {
                     .iter()
                     .enumerate()
                     .map(|(i, card)| format!("Card {i}: {card}"))
-                    .intersperse('\n'.to_string())
-                    .collect(),
+                    .join("\n"),
             ))
         },
     )
@@ -340,7 +338,6 @@ fn main() -> Result<(), ReplError> {
                     ),
                 }
             }
-            #[allow(unstable_name_collisions)]
             Ok(Some(
                 data.chunks(size.chunk_size())
                     .enumerate()
@@ -348,14 +345,9 @@ fn main() -> Result<(), ReplError> {
                         format!(
                             "0x{:x}: ",
                             addr + (size.chunk_size() * size.byte_count() * i) as u32
-                        ) + &c
-                            .iter()
-                            .map(|d| fmt.format(*d, size))
-                            .intersperse(" ".to_string())
-                            .collect::<String>()
+                        ) + &c.iter().map(|d| fmt.format(*d, size)).join(" ")
                     })
-                    .intersperse("\n".to_string())
-                    .collect::<String>(),
+                    .join("\n"),
             ))
         },
     )
