@@ -7,23 +7,36 @@ use parse_int::parse;
 
 pub struct SymbolDisplayer<'a>(&'a SymbolTables);
 
+fn displayer_common<'a, F, T: Display>(
+    symbol_tables: &'a SymbolTables,
+    f: &mut std::fmt::Formatter<'_>,
+    mut table_fmt: F,
+) -> std::fmt::Result
+where
+    F: FnMut(&'a SymbolTable) -> T,
+{
+    f.write_fmt(format_args!(
+        "{}",
+        symbol_tables
+            .tables
+            .iter()
+            .format_with("\n", |(table_name, table), f| {
+                f(&format_args!(
+                    "{table_name} ({}):\n{}",
+                    if table.active { "active" } else { "inactive" },
+                    table_fmt(table),
+                ))
+            })
+    ))
+}
+
 impl Display for SymbolDisplayer<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "{}",
-            self.0
-                .tables
-                .iter()
-                .format_with("\n", |(table_name, table), f| {
-                    f(&format_args!(
-                        "{table_name} ({}):\n{}",
-                        if table.active { "active" } else { "inactive" },
-                        table.symbols.iter().format_with("\n", |(name, symbol), g| {
-                            g(&format_args!("{name}: {symbol}"))
-                        }),
-                    ))
-                })
-        ))
+        displayer_common(self.0, f, |table| {
+            table.symbols.iter().format_with("\n", |(name, symbol), g| {
+                g(&format_args!("{name}: {symbol}"))
+            })
+        })
     }
 }
 
@@ -31,23 +44,7 @@ pub struct BreakpointDisplayer<'a>(&'a SymbolTables);
 
 impl Display for BreakpointDisplayer<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "{}",
-            self.0
-                .tables
-                .iter()
-                .format_with("\n", |(table_name, table), f| {
-                    if !table.breakpoints.is_empty() {
-                        f(&format_args!(
-                            "{table_name} ({}):\n{}",
-                            if table.active { "active" } else { "inactive" },
-                            table.breakpoints.iter().format("\n")
-                        ))
-                    } else {
-                        Ok(())
-                    }
-                })
-        ))
+        displayer_common(self.0, f, |table| table.breakpoints.iter().format("\n"))
     }
 }
 
