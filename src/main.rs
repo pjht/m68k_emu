@@ -64,10 +64,7 @@ fn main() -> Result<(), anyhow::Error> {
         .map_err(|e| anyhow!("Could not parse config file ({})", e))?;
     let mut backplane = Backplane::new();
     for card in config.cards {
-        match backplane.add_card(card.typ, &card.config) {
-            Ok(_) => (),
-            Err(e) => panic!("{}", e),
-        };
+        backplane.add_card(card.typ, &card.config)?;
     }
     let mut symbol_tables = SymbolTables::new();
     if let Some(initial_tables) = config.symbol_tables {
@@ -113,7 +110,7 @@ fn main() -> Result<(), anyhow::Error> {
                         .unwrap()
                         .map(String::as_str)
                         .collect_vec(),
-                );
+                )?;
             Ok(None)
         },
     )

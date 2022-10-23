@@ -1,7 +1,6 @@
-use std::fmt::Display;
-
 use nullable_result::GeneralIterExt;
 use serde_yaml::Mapping;
+use thiserror::Error;
 
 use crate::{
     card::{Card, CardType},
@@ -13,19 +12,12 @@ pub struct Backplane {
     cards: Vec<Box<dyn Card>>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Error)]
 pub enum CardAddError {
+    #[error["Backplane full, could not add card"]]
     BackplaneFull,
+    #[error("Invalid card type")]
     InvalidType,
-}
-
-impl Display for CardAddError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::BackplaneFull => f.write_str("Backplane full, could not add card"),
-            Self::InvalidType => f.write_str("Invalid card type"),
-        }
-    }
 }
 
 impl Backplane {
@@ -42,15 +34,15 @@ impl Backplane {
         &mut self.cards
     }
 
-    pub fn add_card(&mut self, type_name: &str, config: &Mapping) -> Result<usize, CardAddError> {
+    pub fn add_card(&mut self, type_name: &str, config: &Mapping) -> anyhow::Result<usize> {
         if self.cards.len() >= 255 {
-            return Err(CardAddError::BackplaneFull);
+            return Err(CardAddError::BackplaneFull.into());
         }
         self.cards.push(
             inventory::iter::<CardType>()
                 .find(|card_type| card_type.name == type_name)
                 .ok_or(CardAddError::InvalidType)?
-                .new_card(config),
+                .new_card(config)?,
         );
         Ok(self.cards.len() - 1)
     }

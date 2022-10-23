@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use anyhow::anyhow;
 use human_repr::HumanCount;
 use nullable_result::NullableResult;
 use serde_yaml::Mapping;
@@ -20,17 +21,17 @@ pub struct Ram {
 impl Ram {}
 
 impl Card for Ram {
-    fn new(data: &Mapping) -> Self {
+    fn new(data: &Mapping) -> anyhow::Result<Self> {
         let size = data
             .get("size")
-            .expect("No size value for RAM")
+            .ok_or_else(|| anyhow!("No size value for RAM"))?
             .as_u64()
-            .expect("Size value not positive integer");
-        Self {
+            .ok_or_else(|| anyhow!("Size value not a positive integer"))?;
+        Ok(Self {
             data: vec![0; size as usize],
             start: 0,
             enabled: false,
-        }
+        })
     }
     fn read_byte(&mut self, address: u32) -> NullableResult<u8, BusError> {
         if !self.enabled {

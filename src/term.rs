@@ -15,11 +15,11 @@ impl Display for Term {
 }
 
 impl Card for Term {
-    fn new(_data: &Mapping) -> Self
+    fn new(_data: &Mapping) -> anyhow::Result<Self>
     where
         Self: Sized,
     {
-        Self
+        Ok(Self)
     }
 
     fn read_byte_io(&mut self, address: u8) -> NullableResult<u8, BusError> {

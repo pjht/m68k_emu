@@ -1,5 +1,6 @@
 use std::{fmt::Display, fs::File, io::Read};
 
+use anyhow::anyhow;
 use human_repr::HumanCount;
 use nullable_result::NullableResult;
 use serde_yaml::Mapping;
@@ -22,24 +23,26 @@ pub struct Rom {
 impl Rom {}
 
 impl Card for Rom {
-    fn new(data: &Mapping) -> Self {
+    fn new(data: &Mapping) -> anyhow::Result<Self> {
         let file_name = data
             .get("image")
-            .map(|name| name.as_str().expect("File name not string").to_string());
+            .map(|name| name.as_str().ok_or_else(|| anyhow!("File name not string")))
+            .transpose()?
+            .map(|name| name.to_string());
         let mut data = Vec::new();
         if let Some(file_name) = file_name.as_ref() {
             File::open(file_name)
-                .unwrap_or_else(|e| panic!("Could not open ROM image file {} ({})", file_name, e))
+                .map_err(|e| anyhow!("Could not open ROM image file {} ({})", file_name, e))?
                 .read_to_end(&mut data)
-                .unwrap_or_else(|e| panic!("Failed to read ROM image file {} ({})", file_name, e));
+                .map_err(|e| anyhow!("Failed to read ROM image file {} ({})", file_name, e))?;
         };
-        Self {
+        Ok(Self {
             data,
             enabled: true,
             ram: [0; 32 * 1024],
             file_name,
             start: 0,
-        }
+        })
     }
 
     fn read_byte(&mut self, address: u32) -> NullableResult<u8, BusError> {
@@ -92,47 +95,28 @@ impl Card for Rom {
         NullableResult::Ok(())
     }
 
-    fn cmd(&mut self, cmd: &[&str]) {
+    fn cmd(&mut self, cmd: &[&str]) -> anyhow::Result<()> {
         if cmd[0] == "load" && cmd.len() >= 2 {
-            let mut file = match File::open(cmd[1]) {
-                Ok(file) => file,
-                Err(e) => {
-                    println!("Could not open ROM image file {} ({})", cmd[1], e);
-                    return;
-                }
-            };
+            let mut file = File::open(cmd[1])
+                .map_err(|e| anyhow!("Couldn't open ROM image file {} ({})", cmd[1], e))?;
             self.data.clear();
-            match file.read_to_end(&mut self.data) {
-                Ok(_) => (),
-                Err(e) => {
-                    println!("Failed to read ROM image file {} ({})", cmd[1], e);
-                    return;
-                }
-            };
+            file.read_to_end(&mut self.data)
+                .map_err(|e| anyhow!("Failed to read ROM image file {} ({})", cmd[1], e))?;
             self.file_name = Some(cmd[1].into());
             println!("Read ROM image file {}", cmd[1]);
         } else if cmd[0] == "reload" {
             if let Some(file_name) = &self.file_name {
-                let mut file = match File::open(file_name) {
-                    Ok(file) => file,
-                    Err(e) => {
-                        println!("Could not open ROM image file {} ({})", file_name, e);
-                        return;
-                    }
-                };
+                let mut file = File::open(cmd[1])
+                    .map_err(|e| anyhow!("Couldn't open ROM image file {} ({})", cmd[1], e))?;
                 self.data.clear();
-                match file.read_to_end(&mut self.data) {
-                    Ok(_) => (),
-                    Err(e) => {
-                        println!("Failed to read ROM image file {} ({})", file_name, e);
-                        return;
-                    }
-                };
+                file.read_to_end(&mut self.data)
+                    .map_err(|e| anyhow!("Failed to read ROM image file {} ({})", cmd[1], e))?;
                 println!("Reloaded ROM image file {}", file_name);
             } else {
                 println!("No ROM image file to reload");
             }
         }
+        Ok(())
     }
 
     fn reset(&mut self) {

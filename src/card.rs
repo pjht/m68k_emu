@@ -5,7 +5,7 @@ use std::fmt::{Debug, Display};
 
 pub struct CardType {
     pub name: &'static str,
-    new: fn(data: &Mapping) -> Box<dyn Card>,
+    new: fn(data: &Mapping) -> anyhow::Result<Box<dyn Card>>,
 }
 
 impl CardType {
@@ -16,7 +16,7 @@ impl CardType {
         }
     }
 
-    pub fn new_card(&self, data: &Mapping) -> Box<dyn Card> {
+    pub fn new_card(&self, data: &Mapping) -> anyhow::Result<Box<dyn Card>> {
         (self.new)(data)
     }
 }
@@ -24,14 +24,14 @@ impl CardType {
 inventory::collect!(CardType);
 
 pub trait Card: Debug + Display {
-    fn new(data: &Mapping) -> Self
+    fn new(data: &Mapping) -> anyhow::Result<Self>
     where
         Self: Sized;
-    fn new_dyn(data: &Mapping) -> Box<dyn Card>
+    fn new_dyn(data: &Mapping) -> anyhow::Result<Box<dyn Card>>
     where
         Self: Sized + 'static,
     {
-        Box::new(Self::new(data))
+        Ok(Box::new(Self::new(data)?))
     }
     fn display(&self) -> String {
         String::new()
@@ -80,7 +80,9 @@ pub trait Card: Debug + Display {
         NullableResult::Ok(())
     }
 
-    fn cmd(&mut self, _cmd: &[&str]) {}
+    fn cmd(&mut self, _cmd: &[&str]) -> anyhow::Result<()> {
+        Ok(())
+    }
     fn reset(&mut self) {}
 }
 
