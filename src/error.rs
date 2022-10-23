@@ -1,6 +1,6 @@
 use crate::{disas::DisassemblyError, m68k::BusError};
 use reedline_repl_rs::Error as ReplError;
-use std::{error, fmt::Display, io, num::ParseIntError};
+use std::{fmt::Display, io, num::ParseIntError};
 
 #[derive(Debug)]
 pub enum Error {
