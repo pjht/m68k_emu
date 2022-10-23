@@ -1,9 +1,10 @@
 use std::{fmt::Display, path::Path};
 
-use crate::{error::Error, location::Location, symbol::Symbol, symbol_table::SymbolTable};
+use crate::{location::Location, symbol::Symbol, symbol_table::SymbolTable};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parse_int::parse;
+use thiserror::Error;
 
 pub struct SymbolDisplayer<'a>(&'a SymbolTables);
 
@@ -40,6 +41,14 @@ impl Display for SymbolDisplayer<'_> {
     }
 }
 
+#[derive(Debug, Copy, Clone, Error)]
+#[error("Invalid symbol table")]
+struct InvalidSymbolTable;
+
+#[derive(Debug, Copy, Clone, Error)]
+#[error("Invalid symbol name")]
+struct InvalidSymbolName;
+
 pub struct BreakpointDisplayer<'a>(&'a SymbolTables);
 
 impl Display for BreakpointDisplayer<'_> {
@@ -75,21 +84,16 @@ impl SymbolTables {
             })
     }
 
-    pub fn delete(&mut self, table: &str) -> Result<SymbolTable, Error> {
-        self.tables
-            .shift_remove(table)
-            .ok_or(Error::InvalidSymbolTable)
+    pub fn delete(&mut self, table: &str) -> anyhow::Result<SymbolTable> {
+        Ok(self.tables.shift_remove(table).ok_or(InvalidSymbolTable)?)
     }
 
-    pub fn set_active(&mut self, table: &str, active: bool) -> Result<(), Error> {
-        self.tables
-            .get_mut(table)
-            .ok_or(Error::InvalidSymbolTable)?
-            .active = active;
+    pub fn set_active(&mut self, table: &str, active: bool) -> anyhow::Result<()> {
+        self.tables.get_mut(table).ok_or(InvalidSymbolTable)?.active = active;
         Ok(())
     }
 
-    pub fn load_table(&mut self, path: &str, append: bool) -> Result<(), Error> {
+    pub fn load_table(&mut self, path: &str, append: bool) -> anyhow::Result<()> {
         let new_table = SymbolTable::read_from_file(path)?;
         let table_name = Path::new(&path).file_name().unwrap().to_str().unwrap();
         if let Some(table) = self.tables.get_mut(table_name) {
@@ -105,20 +109,20 @@ impl SymbolTables {
         Ok(())
     }
 
-    pub fn set_breakpoint(&mut self, table: &str, symbol: String) -> Result<(), Error> {
+    pub fn set_breakpoint(&mut self, table: &str, symbol: String) -> anyhow::Result<()> {
         self.tables
             .get_mut(table)
-            .ok_or(Error::InvalidSymbolTable)?
+            .ok_or(InvalidSymbolTable)?
             .breakpoints
             .insert(symbol);
         Ok(())
     }
 
-    pub fn delete_breakpoint(&mut self, table: &str, symbol: &str) -> Result<bool, Error> {
+    pub fn delete_breakpoint(&mut self, table: &str, symbol: &str) -> anyhow::Result<bool> {
         Ok(self
             .tables
             .get_mut(table)
-            .ok_or(Error::InvalidSymbolTable)?
+            .ok_or(InvalidSymbolTable)?
             .breakpoints
             .shift_remove(symbol))
     }
@@ -135,16 +139,17 @@ impl SymbolTables {
         self.tables.is_empty()
     }
 
-    pub fn get(&self, table: &str, symbol: &str) -> Result<&Symbol, Error> {
-        self.tables
+    pub fn get(&self, table: &str, symbol: &str) -> anyhow::Result<&Symbol> {
+        Ok(self
+            .tables
             .get(table)
-            .ok_or(Error::InvalidSymbolTable)?
+            .ok_or(InvalidSymbolTable)?
             .symbols
             .get(symbol)
-            .ok_or(Error::InvalidSymbolName)
+            .ok_or(InvalidSymbolName)?)
     }
 
-    pub fn parse_location(&self, location: &str) -> Result<Location, Error> {
+    pub fn parse_location(&self, location: &str) -> anyhow::Result<Location> {
         parse::<u32>(location).map(Location::Address).or_else(|_| {
             let (mut table_name, symbol_name) = location.split_once(':').unwrap_or(("", location));
             if table_name.is_empty() {
@@ -152,16 +157,16 @@ impl SymbolTables {
                     .tables
                     .iter()
                     .find(|(_, table)| table.symbols.contains_key(symbol_name))
-                    .ok_or(Error::InvalidSymbolName)?
+                    .ok_or(InvalidSymbolName)?
                     .0;
             } else if !self
                 .tables
                 .get(table_name)
-                .ok_or(Error::InvalidSymbolTable)?
+                .ok_or(InvalidSymbolTable)?
                 .symbols
                 .contains_key(symbol_name)
             {
-                return Err(Error::InvalidSymbolName);
+                return Err(InvalidSymbolName.into());
             }
             Ok(Location::Symbol((
                 table_name.to_string(),
@@ -170,7 +175,7 @@ impl SymbolTables {
         })
     }
 
-    pub fn parse_location_address(&self, location: &str) -> Result<u32, Error> {
+    pub fn parse_location_address(&self, location: &str) -> anyhow::Result<u32> {
         self.parse_location(location).map(|l| l.addr(self))
     }
 }

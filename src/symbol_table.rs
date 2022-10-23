@@ -1,4 +1,5 @@
-use crate::{error::Error, symbol::Symbol};
+use crate::symbol::Symbol;
+use anyhow::anyhow;
 use elf::gabi::{STT_FILE, STT_SECTION};
 use elf::CachedReadBytes;
 use indexmap::IndexSet;
@@ -21,12 +22,12 @@ impl SymbolTable {
         }
     }
 
-    pub fn read_from_file(path: &str) -> Result<Self, Error> {
+    pub fn read_from_file(path: &str) -> anyhow::Result<Self> {
         let mut cached_reader = CachedReadBytes::new(File::open(path)?);
         let mut file = elf::File::open_stream(&mut cached_reader)?;
         let (symtab, symstrtab) = file
             .symbol_table()?
-            .ok_or(Error::Misc("No symbol table in file"))?;
+            .ok_or_else(|| anyhow!("No symbol table in file"))?;
         let symbols = symtab
             .iter()
             .skip(1)

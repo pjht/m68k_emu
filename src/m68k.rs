@@ -1,5 +1,8 @@
 use bitvec::prelude::*;
-use std::fmt::{Debug, Display};
+use std::{
+    error::Error,
+    fmt::{Debug, Display},
+};
 
 use crate::{
     backplane::Backplane,
@@ -18,6 +21,8 @@ impl Display for BusError {
         f.write_str("Bus error")
     }
 }
+
+impl Error for BusError {}
 
 // pub trait Bus: Debug {
 //     fn read_word(&mut self, address: u32) -> Result<u16, BusError>;

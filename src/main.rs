@@ -3,7 +3,7 @@
 mod backplane;
 mod card;
 mod disas;
-mod error;
+// mod error;
 mod instruction;
 mod location;
 mod m68k;
@@ -16,10 +16,10 @@ mod symbol_tables;
 mod term;
 use crate::{
     backplane::Backplane,
-    error::Error,
     location::Location,
     m68k::{BusError, M68K},
 };
+use anyhow::anyhow;
 use disas::DisassemblyError;
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -32,6 +32,7 @@ use serde::Deserialize;
 use serde_yaml::Mapping;
 use std::{convert::TryFrom, fs, path::Path, process};
 use symbol_tables::SymbolTables;
+use thiserror::Error;
 
 #[derive(Copy, Clone, Debug)]
 enum PeekFormat {
@@ -61,8 +62,12 @@ impl PeekFormat {
     }
 }
 
+#[derive(Debug, Copy, Clone, Error)]
+#[error("Invalid peek format")]
+struct InvalidPeekFormat;
+
 impl TryFrom<char> for PeekFormat {
-    type Error = Error;
+    type Error = InvalidPeekFormat;
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
@@ -71,7 +76,7 @@ impl TryFrom<char> for PeekFormat {
             'd' => Ok(Self::Decimal),
             'u' => Ok(Self::UnsignedDecimal),
             'b' => Ok(Self::Binary),
-            _ => Err(Error::InvalidPeekFormat),
+            _ => Err(InvalidPeekFormat),
         }
     }
 }
@@ -101,15 +106,19 @@ impl PeekSize {
     }
 }
 
+#[derive(Debug, Copy, Clone, Error)]
+#[error("Invalid peek size")]
+struct InvalidPeekSize;
+
 impl TryFrom<char> for PeekSize {
-    type Error = Error;
+    type Error = InvalidPeekSize;
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'b' => Ok(Self::Byte),
             'w' => Ok(Self::Word),
             'l' => Ok(Self::LongWord),
-            _ => Err(Error::InvalidPeekSize),
+            _ => Err(InvalidPeekSize),
         }
     }
 }
@@ -152,7 +161,7 @@ fn main() -> Result<(), ReplError> {
             symbol_tables.load_table(path, true).unwrap();
         }
     }
-    Repl::<_, Error>::new(EmuState {
+    Repl::<_, anyhow::Error>::new(EmuState {
         cpu: M68K::new(backplane),
         symbol_tables,
         address_breakpoints: IndexSet::new(),
@@ -183,7 +192,7 @@ fn main() -> Result<(), ReplError> {
                 .bus_mut()
                 .cards_mut()
                 .get_mut(num as usize)
-                .ok_or(Error::InvalidCard(num))?
+                .ok_or_else(|| anyhow!("Card {} does not exist", num))?
                 .cmd(
                     &args
                         .get_many::<String>("args")
@@ -318,7 +327,7 @@ fn main() -> Result<(), ReplError> {
         |args, state| {
             let fmt_str = args.get_one::<String>("fmt").unwrap();
             if fmt_str.len() != 2 {
-                return Err(Error::Misc("Peek format length must be 2"));
+                return Err(anyhow!("Peek format length must be 2"));
             }
             let fmt = PeekFormat::try_from(fmt_str.chars().next().unwrap())?;
             let size = PeekSize::try_from(fmt_str.chars().nth(1).unwrap())?;
