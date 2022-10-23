@@ -28,7 +28,7 @@ use parse_int::parse;
 use peek::{PeekFormat, PeekSize};
 use reedline_repl_rs::{
     clap::{builder::BoolishValueParser, Arg, ArgAction, Command},
-    Error as ReplError, Repl,
+    Repl,
 };
 use serde::Deserialize;
 use serde_yaml::Mapping;
@@ -57,9 +57,11 @@ struct EmuState {
     address_breakpoints: IndexSet<u32>,
 }
 
-fn main() -> Result<(), ReplError> {
-    let config_str = fs::read_to_string("config.yaml").expect("Could not read config file");
-    let config: EmuConfig = serde_yaml::from_str(&config_str).expect("Could not parse config file");
+fn main() -> Result<(), anyhow::Error> {
+    let config_str = fs::read_to_string("config.yaml")
+        .map_err(|e| anyhow!("Could not read config file ({})", e))?;
+    let config: EmuConfig = serde_yaml::from_str(&config_str)
+        .map_err(|e| anyhow!("Could not parse config file ({})", e))?;
     let mut backplane = Backplane::new();
     for card in config.cards {
         match backplane.add_card(card.typ, &card.config) {
@@ -444,7 +446,8 @@ fn main() -> Result<(), ReplError> {
     // Visible aliases don't actually work, so fake it with hidden subcommands
     .with_command(Command::new("q").hide(true), |_, _| process::exit(0))
     .with_command(Command::new("exit").hide(true), |_, _| process::exit(0))
-    .run()
+    .run()?;
+    Ok(())
 }
 
 fn disas_fmt(
