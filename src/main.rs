@@ -363,7 +363,7 @@ fn main() -> Result<(), anyhow::Error> {
                     .help("The location to resolve")
                     .required(true),
             )
-            .help("Resolve a location to an address"),
+            .about("Resolve a location to an address"),
         |args, state| {
             let location = args.get_one::<String>("location").unwrap();
             Ok(Some(format!(
@@ -386,7 +386,7 @@ fn main() -> Result<(), anyhow::Error> {
                     .requires("location")
                     .help("Delete the breakpoint instead of setting it"),
             )
-            .help("Set a breakpoint or list current breakpoints"),
+            .about("Set a breakpoint or list current breakpoints"),
         |args, state| {
             if let Some(location) = args.get_one::<String>("location") {
                 let location = state.symbol_tables.parse_location(location)?;
