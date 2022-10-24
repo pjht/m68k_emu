@@ -16,20 +16,20 @@ impl Location {
         }
     }
 
-    pub fn displayer<'a>(&'a self, symbol_tables: &'a SymbolTables) -> LocationDisplayer<'a> {
-        LocationDisplayer {
+    pub fn displayer<'a>(&'a self, symbol_tables: &'a SymbolTables) -> Displayer<'a> {
+        Displayer {
             location: self,
             symbol_tables,
         }
     }
 }
 
-pub struct LocationDisplayer<'a> {
+pub struct Displayer<'a> {
     location: &'a Location,
     symbol_tables: &'a SymbolTables,
 }
 
-impl<'a> Display for LocationDisplayer<'a> {
+impl<'a> Display for Displayer<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.location {
             Location::Symbol((table, sym)) => f.write_fmt(format_args!(

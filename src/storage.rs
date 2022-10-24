@@ -27,7 +27,7 @@ impl Card for Storage {
             .get("image")
             .map(|name| name.as_str().ok_or_else(|| anyhow!("File name not string")))
             .transpose()?
-            .map(|name| name.to_string());
+            .map(ToString::to_string);
         let mut data = Vec::new();
         if let Some(file_name) = file_name.as_ref() {
             File::open(file_name)

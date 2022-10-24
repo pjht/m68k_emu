@@ -3,12 +3,12 @@ use nullable_result::NullableResult;
 use serde_yaml::Mapping;
 use std::fmt::{Debug, Display};
 
-pub struct CardType {
+pub struct Type {
     pub name: &'static str,
     new: fn(data: &Mapping) -> anyhow::Result<Box<dyn Card>>,
 }
 
-impl CardType {
+impl Type {
     pub const fn new<T: Card + 'static>(name: &'static str) -> Self {
         Self {
             name,
@@ -21,7 +21,7 @@ impl CardType {
     }
 }
 
-inventory::collect!(CardType);
+inventory::collect!(Type);
 
 pub trait Card: Debug + Display {
     fn new(data: &Mapping) -> anyhow::Result<Self>
@@ -126,7 +126,7 @@ pub const fn u16_get_be_byte(val: u16, idx: u8) -> u8 {
 macro_rules! register {
     ($typ: ty, $name: literal) => {
         paste::paste! {
-            inventory::submit!($crate::card::CardType::new::<$typ>($name));
+            inventory::submit!($crate::card::Type::new::<$typ>($name));
         }
     };
 }

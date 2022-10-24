@@ -3,7 +3,7 @@ use serde_yaml::Mapping;
 use thiserror::Error;
 
 use crate::{
-    card::{Card, CardType},
+    card::{self, Card},
     m68k::BusError,
 };
 
@@ -39,7 +39,7 @@ impl Backplane {
             return Err(CardAddError::BackplaneFull.into());
         }
         self.cards.push(
-            inventory::iter::<CardType>()
+            inventory::iter::<card::Type>()
                 .find(|card_type| card_type.name == type_name)
                 .ok_or(CardAddError::InvalidType)?
                 .new_card(config)?,

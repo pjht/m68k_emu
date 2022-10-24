@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Copy, Clone, Debug)]
-pub enum PeekFormat {
+pub enum Format {
     Octal,
     Hex,
     Decimal,
@@ -9,16 +9,16 @@ pub enum PeekFormat {
     Binary,
 }
 
-impl PeekFormat {
-    pub fn format(self, num: u32, size: PeekSize) -> String {
+impl Format {
+    pub fn format(self, num: u32, size: Size) -> String {
         match self {
             Self::Octal => format!("Oo{:0>width$o}", num, width = size.byte_count()),
             Self::Hex => format!("0x{:0>width$x}", num, width = size.byte_count() * 2),
             Self::Decimal => {
                 let num = match size {
-                    PeekSize::Byte => num as u8 as i8 as i32,
-                    PeekSize::Word => num as u16 as i16 as i32,
-                    PeekSize::LongWord => num as i32,
+                    Size::Byte => num as u8 as i8 as i32,
+                    Size::Word => num as u16 as i16 as i32,
+                    Size::LongWord => num as i32,
                 };
                 format!("{}", num)
             }
@@ -30,10 +30,10 @@ impl PeekFormat {
 
 #[derive(Debug, Copy, Clone, Error)]
 #[error("Invalid peek format")]
-pub struct InvalidPeekFormat;
+pub struct InvalidFormat;
 
-impl TryFrom<char> for PeekFormat {
-    type Error = InvalidPeekFormat;
+impl TryFrom<char> for Format {
+    type Error = InvalidFormat;
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
@@ -42,49 +42,48 @@ impl TryFrom<char> for PeekFormat {
             'd' => Ok(Self::Decimal),
             'u' => Ok(Self::UnsignedDecimal),
             'b' => Ok(Self::Binary),
-            _ => Err(InvalidPeekFormat),
+            _ => Err(InvalidFormat),
         }
     }
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum PeekSize {
+pub enum Size {
     Byte,
     Word,
     LongWord,
 }
 
-impl PeekSize {
+impl Size {
     pub fn byte_count(self) -> usize {
         match self {
-            PeekSize::Byte => 1,
-            PeekSize::Word => 2,
-            PeekSize::LongWord => 4,
+            Self::Byte => 1,
+            Self::Word => 2,
+            Self::LongWord => 4,
         }
     }
 
     pub fn chunk_size(self) -> usize {
         match self {
-            PeekSize::Byte => 8,
-            PeekSize::Word => 8,
-            PeekSize::LongWord => 4,
+            Self::Byte | Self::Word => 8,
+            Self::LongWord => 4,
         }
     }
 }
 
 #[derive(Debug, Copy, Clone, Error)]
 #[error("Invalid peek size")]
-pub struct InvalidPeekSize;
+pub struct InvalidSize;
 
-impl TryFrom<char> for PeekSize {
-    type Error = InvalidPeekSize;
+impl TryFrom<char> for Size {
+    type Error = InvalidSize;
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'b' => Ok(Self::Byte),
             'w' => Ok(Self::Word),
             'l' => Ok(Self::LongWord),
-            _ => Err(InvalidPeekSize),
+            _ => Err(InvalidSize),
         }
     }
 }

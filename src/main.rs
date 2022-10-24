@@ -25,7 +25,6 @@ use disas::DisassemblyError;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use parse_int::parse;
-use peek::{PeekFormat, PeekSize};
 use reedline_repl_rs::{
     clap::{builder::BoolishValueParser, Arg, ArgAction, Command},
     Repl,
@@ -201,7 +200,7 @@ fn main() -> Result<(), anyhow::Error> {
                     .get_one::<String>("stop_addr")
                     .map(|s| state.symbol_tables.parse_location_address(s))
                     .transpose()?;
-                if stop_addr.map(|a| state.cpu.pc() == a).unwrap_or(false)
+                if stop_addr.map_or(false, |a| state.cpu.pc() == a)
                     || state.symbol_tables.breakpoint_set_at(state.cpu.pc())
                     || state.address_breakpoints.contains(&state.cpu.pc())
                 {
@@ -252,8 +251,8 @@ fn main() -> Result<(), anyhow::Error> {
             if fmt_str.len() != 2 {
                 return Err(anyhow!("Peek format length must be 2"));
             }
-            let fmt = PeekFormat::try_from(fmt_str.chars().next().unwrap())?;
-            let size = PeekSize::try_from(fmt_str.chars().nth(1).unwrap())?;
+            let fmt = peek::Format::try_from(fmt_str.chars().next().unwrap())?;
+            let size = peek::Size::try_from(fmt_str.chars().nth(1).unwrap())?;
             let count = parse::<u32>(args.get_one::<String>("count").map_or("1", String::as_str))?;
             let addr = state
                 .symbol_tables
@@ -262,9 +261,9 @@ fn main() -> Result<(), anyhow::Error> {
             let bus = state.cpu.bus_mut();
             for i in 0..count {
                 match size {
-                    PeekSize::Byte => data.push(bus.read_byte(addr + i)? as u32),
-                    PeekSize::Word => data.push(bus.read_word(addr + (i * 2))? as u32),
-                    PeekSize::LongWord => data.push(
+                    peek::Size::Byte => data.push(bus.read_byte(addr + i)? as u32),
+                    peek::Size::Word => data.push(bus.read_word(addr + (i * 2))? as u32),
+                    peek::Size::LongWord => data.push(
                         (bus.read_word(addr + (i * 4))? as u32) << 16
                             | (bus.read_word(addr + (i * 4) + 2)? as u32),
                     ),
