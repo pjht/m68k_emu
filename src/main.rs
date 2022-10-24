@@ -69,7 +69,7 @@ fn main() -> Result<(), anyhow::Error> {
     let mut symbol_tables = SymbolTables::new();
     if let Some(initial_tables) = config.symbol_tables {
         for path in initial_tables {
-            symbol_tables.load_table(path, true).unwrap();
+            symbol_tables.load_table(path, true)?;
         }
     }
     Repl::<_, anyhow::Error>::new(EmuState {

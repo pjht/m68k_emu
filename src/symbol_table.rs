@@ -27,7 +27,7 @@ impl SymbolTable {
         let mut file = elf::File::open_stream(&mut cached_reader)?;
         let (symtab, symstrtab) = file
             .symbol_table()?
-            .ok_or_else(|| anyhow!("No symbol table in file"))?;
+            .ok_or_else(|| anyhow!("No symbol table in {}", path))?;
         let symbols = symtab
             .iter()
             .skip(1)
