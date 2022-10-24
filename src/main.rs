@@ -243,7 +243,7 @@ fn main() -> Result<(), anyhow::Error> {
                     .short('f')
                     .required(true)
                     .takes_value(true)
-                    .help("The formap to print the values in (<fmt><size>)"),
+                    .help("The format to print the values in (<fmt><size>)"),
             )
             .arg(Arg::new("addr").required(true))
             .about("Peek a memory address"),
@@ -326,7 +326,7 @@ fn main() -> Result<(), anyhow::Error> {
                     .short('a')
                     .action(ArgAction::SetTrue)
                     .requires("file")
-                    .conflicts_with_all(&["delete", "active"])
+                    .conflicts_with_all(&["delete", "set-active"])
                     .help("Append the file's symbols to the loaded list of symbols"),
             )
             .arg(
@@ -335,12 +335,12 @@ fn main() -> Result<(), anyhow::Error> {
                     .short('d')
                     .action(ArgAction::SetTrue)
                     .requires("file")
-                    .conflicts_with_all(&["append", "active"])
+                    .conflicts_with_all(&["append", "set-active"])
                     .help("Delete the symbol table instead of loading it"),
             )
             .arg(
-                Arg::new("active")
-                    .long("active")
+                Arg::new("set-active")
+                    .long("set-active")
                     .short('c')
                     .takes_value(true)
                     .value_parser(BoolishValueParser::new())
@@ -354,7 +354,7 @@ fn main() -> Result<(), anyhow::Error> {
                 let table_name = Path::new(&file_path).file_name().unwrap().to_str().unwrap();
                 if args.get_flag("delete") {
                     state.symbol_tables.delete(table_name)?;
-                } else if let Some(&active) = args.get_one::<bool>("active") {
+                } else if let Some(&active) = args.get_one::<bool>("set-active") {
                     state.symbol_tables.set_active(table_name, active)?;
                 } else {
                     state
