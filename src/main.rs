@@ -90,10 +90,11 @@ fn main() -> Result<(), anyhow::Error> {
                     .help("The card number to send the command to"),
             )
             .arg(
-                Arg::new("args")
+                Arg::new("cmd")
                     .required(true)
                     .multiple_values(true)
-                    .takes_value(true),
+                    .takes_value(true)
+                    .help("The command to send"),
             )
             .about("Send a command to a card"),
         |args, state| {
@@ -106,7 +107,7 @@ fn main() -> Result<(), anyhow::Error> {
                 .ok_or_else(|| anyhow!("Card {} does not exist", num))?
                 .cmd(
                     &args
-                        .get_many::<String>("args")
+                        .get_many::<String>("cmd")
                         .unwrap()
                         .map(String::as_str)
                         .collect_vec(),
@@ -231,8 +232,19 @@ fn main() -> Result<(), anyhow::Error> {
     )
     .with_command(
         Command::new("peek")
-            .arg(Arg::new("count").short('c').takes_value(true))
-            .arg(Arg::new("fmt").short('f').required(true).takes_value(true))
+            .arg(
+                Arg::new("count")
+                    .short('c')
+                    .takes_value(true)
+                    .help("The count of values to print"),
+            )
+            .arg(
+                Arg::new("fmt")
+                    .short('f')
+                    .required(true)
+                    .takes_value(true)
+                    .help("The formap to print the values in (<fmt><size>)"),
+            )
             .arg(Arg::new("addr").required(true))
             .about("Peek a memory address"),
         |args, state| {
@@ -333,7 +345,8 @@ fn main() -> Result<(), anyhow::Error> {
                     .takes_value(true)
                     .value_parser(BoolishValueParser::new())
                     .requires("file")
-                    .conflicts_with_all(&["append", "delete"]),
+                    .conflicts_with_all(&["append", "delete"])
+                    .help("Set whether the symbol table is active or not"),
             )
             .about("Load symbols from an ELF file, or list symbols if no file provided"),
         |args, state| {
