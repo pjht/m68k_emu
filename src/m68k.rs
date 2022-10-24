@@ -108,7 +108,7 @@ impl M68K {
         &mut self,
         loc: u32,
     ) -> Result<(Instruction, u32), DisassemblyError<BusError>> {
-        disas::disasm::<_>(loc, &mut |addr| self.bus.read_byte(addr))
+        disas::disasm(loc, &mut |addr| self.bus.read_byte(addr))
     }
 
     pub fn step(&mut self) {
