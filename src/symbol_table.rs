@@ -23,8 +23,7 @@ impl SymbolTable {
     }
 
     pub fn read_from_file(path: &str) -> anyhow::Result<Self> {
-        let mut cached_reader = CachedReadBytes::new(File::open(path)?);
-        let mut file = elf::File::open_stream(&mut cached_reader)?;
+        let mut file = elf::File::open_stream(CachedReadBytes::new(File::open(path)?))?;
         let (symtab, symstrtab) = file
             .symbol_table()?
             .ok_or_else(|| anyhow!("No symbol table in {}", path))?;
