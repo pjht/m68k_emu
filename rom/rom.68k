@@ -1,6 +1,5 @@
-  .long 0, start
+  .long fakestack, start
 start:
-  move.w #fakestack, a7 
   move.b #0x1, d0 | Find the ROM card
   bra.b find_first_card
 romfindret:
