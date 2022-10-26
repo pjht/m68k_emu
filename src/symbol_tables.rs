@@ -1,12 +1,14 @@
 use std::{fmt::Display, path::Path};
 
-use crate::{location::Location, symbol::Symbol, symbol_table::SymbolTable};
+use crate::{
+    location::Location,
+    symbol::Symbol,
+    symbol_table::{InvalidSymbolName, SymbolTable},
+};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use parse_int::parse;
 use thiserror::Error;
-
-pub struct SymbolDisplayer<'a>(&'a SymbolTables);
 
 fn displayer_common<'a, F, T: Display>(
     symbol_tables: &'a SymbolTables,
@@ -31,13 +33,11 @@ where
     ))
 }
 
+pub struct SymbolDisplayer<'a>(&'a SymbolTables);
+
 impl Display for SymbolDisplayer<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        displayer_common(self.0, f, |table| {
-            table.symbols.iter().format_with("\n", |(name, symbol), g| {
-                g(&format_args!("{name}: {symbol}"))
-            })
-        })
+        displayer_common(self.0, f, |table| table.symbol_displayer())
     }
 }
 
@@ -45,15 +45,11 @@ impl Display for SymbolDisplayer<'_> {
 #[error("Invalid symbol table")]
 struct InvalidSymbolTable;
 
-#[derive(Debug, Copy, Clone, Error)]
-#[error("Invalid symbol name")]
-struct InvalidSymbolName;
-
 pub struct BreakpointDisplayer<'a>(&'a SymbolTables);
 
 impl Display for BreakpointDisplayer<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        displayer_common(self.0, f, |table| table.breakpoints.iter().format("\n"))
+        displayer_common(self.0, f, |table| table.breakpoint_displayer())
     }
 }
 
@@ -97,7 +93,7 @@ impl SymbolTables {
         let new_table = SymbolTable::read_from_file(path)?;
         let table_name = Path::new(&path).file_name().unwrap().to_str().unwrap();
         if let Some(table) = self.tables.get_mut(table_name) {
-            table.update_symbols(new_table.symbols);
+            table.update_symbols_from(new_table);
         } else {
             self.tables.insert(table_name.to_string(), new_table);
         };
@@ -110,12 +106,12 @@ impl SymbolTables {
     }
 
     pub fn set_breakpoint(&mut self, table: &str, symbol: String) -> anyhow::Result<()> {
-        self.get_table_mut(table)?.breakpoints.insert(symbol);
+        self.get_table_mut(table)?.set_breakpoint(symbol);
         Ok(())
     }
 
     pub fn delete_breakpoint(&mut self, table: &str, symbol: &str) -> anyhow::Result<bool> {
-        Ok(self.get_table_mut(table)?.breakpoints.shift_remove(symbol))
+        Ok(self.get_table_mut(table)?.delete_breakpoint(symbol))
     }
 
     pub fn symbol_displayer(&self) -> SymbolDisplayer<'_> {
@@ -131,11 +127,7 @@ impl SymbolTables {
     }
 
     pub fn get(&self, table: &str, symbol: &str) -> anyhow::Result<&Symbol> {
-        Ok(self
-            .get_table(table)?
-            .symbols
-            .get(symbol)
-            .ok_or(InvalidSymbolName)?)
+        self.get_table(table)?.get_symbol(symbol)
     }
 
     pub fn parse_location(&self, location: &str) -> anyhow::Result<Location> {
@@ -145,16 +137,10 @@ impl SymbolTables {
                 table_name = self
                     .tables
                     .iter()
-                    .find(|(_, table)| table.symbols.contains_key(symbol_name))
+                    .find(|(_, table)| table.contains_symbol(symbol_name))
                     .ok_or(InvalidSymbolName)?
                     .0;
-            } else if !self
-                .tables
-                .get(table_name)
-                .ok_or(InvalidSymbolTable)?
-                .symbols
-                .contains_key(symbol_name)
-            {
+            } else if !self.get_table(table_name)?.contains_symbol(symbol_name) {
                 return Err(InvalidSymbolName.into());
             }
             Ok(Location::Symbol((

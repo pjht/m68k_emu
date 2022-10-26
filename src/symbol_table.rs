@@ -3,15 +3,50 @@ use anyhow::anyhow;
 use elf::gabi::{STT_FILE, STT_SECTION};
 use elf::CachedReadBytes;
 use indexmap::IndexSet;
+use itertools::Itertools;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::fs::File;
+use thiserror::Error;
+
+pub struct SymbolDisplayer<'a>(&'a SymbolTable);
+
+impl Display for SymbolDisplayer<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{}",
+            self.0
+                .symbols
+                .iter()
+                .format_with("\n", |(name, symbol), g| {
+                    g(&format_args!("{name}: {symbol}"))
+                })
+        ))
+    }
+}
+
+#[derive(Debug, Copy, Clone, Error)]
+#[error("Invalid symbol table")]
+struct InvalidSymbolTable;
+
+pub struct BreakpointDisplayer<'a>(&'a SymbolTable);
+
+impl Display for BreakpointDisplayer<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}", self.0.breakpoints.iter().format("\n")))
+    }
+}
 
 #[derive(Debug)]
 pub struct SymbolTable {
-    pub symbols: HashMap<String, Symbol>,
-    pub breakpoints: IndexSet<String>,
+    symbols: HashMap<String, Symbol>,
+    breakpoints: IndexSet<String>,
     pub active: bool,
 }
+
+#[derive(Debug, Copy, Clone, Error)]
+#[error("Invalid symbol name")]
+pub struct InvalidSymbolName;
 
 impl SymbolTable {
     pub fn new(symbols: HashMap<String, Symbol>) -> Self {
@@ -41,14 +76,14 @@ impl SymbolTable {
         Ok(Self::new(symbols))
     }
 
-    pub fn update_symbols(&mut self, symbols: HashMap<String, Symbol>) {
+    pub fn update_symbols_from(&mut self, table: Self) {
         self.breakpoints = self
             .breakpoints
             .iter()
             .cloned()
-            .filter(|sym| symbols.contains_key(sym))
+            .filter(|sym| table.symbols.contains_key(sym))
             .collect::<IndexSet<_>>();
-        self.symbols = symbols;
+        self.symbols = table.symbols;
     }
 
     pub fn breakpoint_set_at(&self, addr: u32) -> bool {
@@ -57,11 +92,35 @@ impl SymbolTable {
             .any(|sym| self.symbols[sym].value() == addr)
     }
 
+    pub fn set_breakpoint(&mut self, symbol: String) {
+        self.breakpoints.insert(symbol);
+    }
+
+    pub fn delete_breakpoint(&mut self, symbol: &str) -> bool {
+        self.breakpoints.shift_remove(symbol)
+    }
+
     pub fn address_to_symbol(&self, addr: u32) -> Option<(&String, u32)> {
         self.symbols
             .iter()
             .filter(|(_, sym)| sym.value() <= addr)
             .map(|(sym_name, sym)| (sym_name, addr - sym.value()))
             .min_by_key(|(_, offset)| *offset)
+    }
+
+    pub fn get_symbol(&self, symbol: &str) -> anyhow::Result<&Symbol> {
+        Ok(self.symbols.get(symbol).ok_or(InvalidSymbolName)?)
+    }
+
+    pub fn contains_symbol(&self, symbol: &str) -> bool {
+        self.symbols.contains_key(symbol)
+    }
+
+    pub fn symbol_displayer(&self) -> SymbolDisplayer<'_> {
+        SymbolDisplayer(self)
+    }
+
+    pub fn breakpoint_displayer(&self) -> BreakpointDisplayer {
+        BreakpointDisplayer(self)
     }
 }
