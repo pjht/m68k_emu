@@ -54,7 +54,7 @@ impl Display for BreakpointDisplayer<'_> {
 }
 
 pub struct SymbolTables {
-    pub tables: IndexMap<String, SymbolTable>,
+    tables: IndexMap<String, SymbolTable>,
 }
 
 impl SymbolTables {
