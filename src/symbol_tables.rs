@@ -89,7 +89,7 @@ impl SymbolTables {
     }
 
     pub fn set_active(&mut self, table: &str, active: bool) -> anyhow::Result<()> {
-        self.tables.get_mut(table).ok_or(InvalidSymbolTable)?.active = active;
+        self.get_table_mut(table)?.active = active;
         Ok(())
     }
 
@@ -110,21 +110,12 @@ impl SymbolTables {
     }
 
     pub fn set_breakpoint(&mut self, table: &str, symbol: String) -> anyhow::Result<()> {
-        self.tables
-            .get_mut(table)
-            .ok_or(InvalidSymbolTable)?
-            .breakpoints
-            .insert(symbol);
+        self.get_table_mut(table)?.breakpoints.insert(symbol);
         Ok(())
     }
 
     pub fn delete_breakpoint(&mut self, table: &str, symbol: &str) -> anyhow::Result<bool> {
-        Ok(self
-            .tables
-            .get_mut(table)
-            .ok_or(InvalidSymbolTable)?
-            .breakpoints
-            .shift_remove(symbol))
+        Ok(self.get_table_mut(table)?.breakpoints.shift_remove(symbol))
     }
 
     pub fn symbol_displayer(&self) -> SymbolDisplayer<'_> {
@@ -141,9 +132,7 @@ impl SymbolTables {
 
     pub fn get(&self, table: &str, symbol: &str) -> anyhow::Result<&Symbol> {
         Ok(self
-            .tables
-            .get(table)
-            .ok_or(InvalidSymbolTable)?
+            .get_table(table)?
             .symbols
             .get(symbol)
             .ok_or(InvalidSymbolName)?)
@@ -177,5 +166,13 @@ impl SymbolTables {
 
     pub fn parse_location_address(&self, location: &str) -> anyhow::Result<u32> {
         self.parse_location(location).map(|l| l.addr(self))
+    }
+
+    fn get_table(&self, table: &str) -> anyhow::Result<&SymbolTable> {
+        Ok(self.tables.get(table).ok_or(InvalidSymbolTable)?)
+    }
+
+    fn get_table_mut(&mut self, table: &str) -> anyhow::Result<&mut SymbolTable> {
+        Ok(self.tables.get_mut(table).ok_or(InvalidSymbolTable)?)
     }
 }
